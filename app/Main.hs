@@ -9,7 +9,6 @@ main = do
   args <- getArgs
   putStrLn $ teh args []
 
-
 teh :: [String] -> [Change] -> String
 teh [] [] = "whoosie doopsie run me with arguments or run teh -h for help" -- no arguments were passed
 teh [x] [] =
@@ -18,19 +17,17 @@ teh [x] [] =
   else "whoosie doopsie run me with more than one argument or run teh -h for help" -- only one argument was passed
 teh [x] xs = doChanges xs x -- base case, one argument left and changes to apply to it
 teh [] xs = "whoops I have changes to do but nothing to do them too" <> (show xs)
-teh (x:xs:xss) chgs =
-  if x == "-a" then
-    let ac = readMaybe xs :: Maybe Change in
-      case ac of
-        Just ch -> teh xss $ chgs <+> ch -- save this Change in a list and recurse until the last argument
-        Nothing -> "parse error on "<>xs
-  else if x == "-h" then help -- incase a longer argument starts with -h
-  else -- check for custom macro
-    case (chgMacros !? x) of
-      Nothing -> -- macro not found
-        x <> " unrecognized as command"
-      Just macchgs -> -- macro found, add to list of changes and recurse
-        teh (xs:xss) (chgs <> macchgs)
+teh (x:xs) chgs =
+  if x == "-h" then help
+  else -- check if it can be read as a Change
+    case (readMaybe x :: Maybe Change) of
+      Just ch -> teh xs $ chgs <+> ch -- save this Change in a list and recurse until the last argument
+      Nothing ->  -- check for custom macro
+        case (chgMacros !? x) of
+          Nothing -> -- macro not found
+            x <> " not recognized as command"
+          Just macchgs -> -- macro found, add to list of changes and recurse
+            teh xs (chgs <> macchgs)
 
 
 
@@ -41,7 +38,7 @@ doChanges (x:xs) txt = doChanges xs $ doChange x txt
 doChange :: Change -> String -> String
 doChange (Ch Whole wht) txt = -- applying change to whole blob of text
   case wht of
-    Ins tx n ->
+    Ins tx n ->    -- TODO!!!! figure out how to add to end
       if n >= 0 then -- counting forward
         (ptake n txt) <> tx <> (pdrop n txt)
       else -- counting backward
@@ -56,9 +53,9 @@ doChange (Ch Whole wht) txt = -- applying change to whole blob of text
           (dropEnd (abs b) (ptake a txt)) <> pdrop a txt
       else -- counting back for skipped letters
         if b > 0 then -- deleting foward
-          (dropEnd (abs a) txt) <> (drop b (takeEnd (abs a)))
+          (dropEnd (abs a) txt) <> (pdrop b (takeEnd (abs a) txt))
         else -- deleting back
-          (dropEnd ((abs a)+(abs b)) <> (takeEnd (abs a))
+          dropEnd ((abs a)+(abs b)) txt <> (takeEnd (abs a) txt)
 
 
 doChange (Ch Each wht) txt = undefined
