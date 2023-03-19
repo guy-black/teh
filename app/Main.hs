@@ -7,7 +7,8 @@ import Data.Map           -- for Map
 main :: IO ()
 main = do
   args <- getArgs
-  putStrLn $ teh args []
+  arg <- getLine
+  putStrLn $ teh (args <+> arg) []
 
 teh :: [String] -> [Change] -> String
 teh [] [] = "whoosie doopsie run me with arguments or run teh -h for help" -- no arguments were passed
@@ -16,7 +17,7 @@ teh [x] [] =
   else if x == "penguin" then pod
   else "whoosie doopsie run me with more than one argument or run teh -h for help" -- only one argument was passed
 teh [x] xs = doChanges xs x -- base case, one argument left and changes to apply to it
-teh [] xs = "whoops I have changes to do but nothing to do them too" <> (show xs)
+teh [] xs = "whoops I have these changes to do but nothing to do them too " <> (show xs)
 teh (x:xs) chgs =
   if x == "-h" then help
   else -- check if it can be read as a Change
@@ -29,8 +30,6 @@ teh (x:xs) chgs =
           Just macchgs -> -- macro found, add to list of changes and recurse
             teh xs (chgs <> macchgs)
 
-
-
 doChanges :: [Change] -> String -> String
 doChanges [] txt = txt
 doChanges (x:xs) txt = doChanges xs $ doChange x txt
@@ -38,11 +37,11 @@ doChanges (x:xs) txt = doChanges xs $ doChange x txt
 doChange :: Change -> String -> String
 doChange (Ch Whole wht) txt = -- applying change to whole blob of text
   case wht of
-    Ins tx n ->    -- TODO!!!! figure out how to add to end
+    Ins tx n ->
       if n >= 0 then -- counting forward
         (ptake n txt) <> tx <> (pdrop n txt)
       else -- counting backward
-        (dropEnd (abs n) txt) <> tx <> (takeEnd (abs n) txt)
+        (dropEnd ((abs n)-1) txt) <> tx <> (takeEnd ((abs n)-1) txt)
     Rem a b ->
       if b==0 then
         txt -- delete nothing
@@ -56,7 +55,6 @@ doChange (Ch Whole wht) txt = -- applying change to whole blob of text
           (dropEnd (abs a) txt) <> (pdrop b (takeEnd (abs a) txt))
         else -- deleting back
           dropEnd ((abs a)+(abs b)) txt <> (takeEnd (abs a) txt)
-
 
 doChange (Ch Each wht) txt = undefined
 
@@ -74,11 +72,8 @@ data What = Ins String Int
           | Rem Int Int
   deriving (Read, Show)
 
-
--- TODO: go to haskell playground and figure out the most efficient way to implement this
 (<+>) :: [a] -> a -> [a]
 (<+>) xs x = xs<>[x]
-
 
 pod :: String
 pod =
@@ -88,7 +83,6 @@ pod =
 \love and waffles,\
 \\
 \t3h PeNgU1N oF d00m"
-
 
 help :: String
 help = "I'll get to it"

@@ -11,8 +11,10 @@ apply changes to
 
 insert "" at x
   - insert given text at index number x
-    - x is after x characters, -x is before last x characters
-    - 0 is before first character, -0 is after last character
+    - x is after x characters, -x is before last x-1 characters
+    - 0 is before first character, -1 is after last character
+                                   -2 is before last character
+                                   -3 is before last two charactes
 
 delete x to y
   - delete y chars skipping first x
