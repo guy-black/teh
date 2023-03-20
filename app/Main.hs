@@ -1,8 +1,10 @@
 module Main (main) where
 
-import System.Environment -- for getArgs
-import Text.Read          -- for readMaybe
-import Data.Map           -- for Map
+import System.Environment         -- for getArgs
+import Text.Read                  -- for readMaybe
+import Data.Map qualified as M    -- for M.Map
+import Data.Map ((!?))
+import Data.List (sort)
 
 main :: IO ()
 main = do
@@ -20,6 +22,7 @@ teh [x] xs = doChanges xs x -- base case, one argument left and changes to apply
 teh [] xs = "whoops I have these changes to do but nothing to do them too " <> (show xs)
 teh (x:xs) chgs =
   if x == "-h" then help
+  else if x == "penguin" then pod
   else -- check if it can be read as a Change
     case (readMaybe x :: Maybe Change) of
       Just ch -> teh xs $ chgs <+> ch -- save this Change in a list and recurse until the last argument
@@ -35,11 +38,13 @@ doChanges [] txt = txt
 doChanges (x:xs) txt = doChanges xs $ doChange x txt
 
 doChange :: Change -> String -> String
+doChange (Ch _ NullOpt) txt = txt
+
 doChange (Ch Whole wht) txt = -- applying change to whole blob of text
   case wht of
     Ins tx n ->
       if n >= 0 then -- counting forward
-        (ptake n txt) <> tx <> (pdrop n txt)
+        (take n txt) <> tx <> (drop n txt)
       else -- counting backward
         (dropEnd ((abs n)-1) txt) <> tx <> (takeEnd ((abs n)-1) txt)
     Rem a b ->
@@ -47,16 +52,17 @@ doChange (Ch Whole wht) txt = -- applying change to whole blob of text
         txt -- delete nothing
       else if a >= 0 then -- counting foward for skipped letters
         if b > 0 then -- deleting foward
-          (ptake a txt) <> (pdrop (a+b) txt)
+          (take a txt) <> (drop (a+b) txt)
         else -- deleting back
-          (dropEnd (abs b) (ptake a txt)) <> pdrop a txt
+          (dropEnd (abs b) (take a txt)) <> drop a txt
       else -- counting back for skipped letters
         if b > 0 then -- deleting foward
-          (dropEnd (abs a) txt) <> (pdrop b (takeEnd (abs a) txt))
+          (dropEnd (abs a) txt) <> (drop b (takeEnd (abs a) txt))
         else -- deleting back
           dropEnd ((abs a)+(abs b)) txt <> (takeEnd (abs a) txt)
 
-doChange (Ch Each wht) txt = undefined
+doChange (Ch Each wht) txt =
+  unlines ( map (doChange (Ch Whole wht)) (lines txt))
 
 doChange (Ch (Only ns) wht) txt = undefined
 
@@ -70,6 +76,7 @@ data Which = Whole
 
 data What = Ins String Int
           | Rem Int Int
+          | NullOpt
   deriving (Read, Show)
 
 (<+>) :: [a] -> a -> [a]
@@ -87,17 +94,11 @@ pod =
 help :: String
 help = "I'll get to it"
 
-chgMacros :: Map String [ Change ]
-chgMacros = empty
-
-ptake :: Int -> [a] -> [a]
-ptake = Prelude.take
+chgMacros :: M.Map String [ Change ]
+chgMacros = M.empty
 
 takeEnd :: Int -> [a] -> [a]
-takeEnd n  = (reverse . ptake n . reverse)
-
-pdrop :: Int -> [a] -> [a]
-pdrop = Prelude.drop
+takeEnd n  = (reverse . take n . reverse)
 
 dropEnd :: Int -> [a] -> [a]
-dropEnd n  = (reverse . pdrop n . reverse)
+dropEnd n  = (reverse . drop n . reverse)
