@@ -9,7 +9,7 @@ import Data.List (sort, isPrefixOf)
 main :: IO ()
 main = do
   args <- getArgs
-  arg <- getLine -- ooh this isn't getting all the lines of input
+  arg <- getContents
   putStrLn $ teh (args <+> arg) []
 
 teh :: [String] -> [Change] -> String
