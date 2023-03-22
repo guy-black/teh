@@ -19,11 +19,13 @@ insert "" at x
 delete x to y
   - delete y chars skipping first x
     - x 0 will never delete anything, is basically an id
+    - 0 -x will delete nothing because there are no letters to delete before the first letter
+    - -1 5 like wise will only delete the last character because that is the last character to be deleted
+       rem never loops around
     - 0 2 will start at the beginning and delete the first 2 characters
     - 5 3 will skip first 5 characters then delete the next 3
     - 5 -3 will skip the first 5 characters, then delete the previous three
            effectively the same as 2 3
-    - 0 -2 will start at beginning, and loop back to delete last two characters
     - -3 2 will starting from the end skip the last 3 characters, then delete the firt two of those last 3 characters
     - -3 -2 will starting from the end skip the last 3 letters, then delete 2 letters before them
            effectively the same as -5 2

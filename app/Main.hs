@@ -67,8 +67,8 @@ doChange (Ch Each wht) txt =
   unlines ( map (doChange (Ch Whole wht)) (lines txt))
 
 doChange (Ch (Only ns) wht) txt =
-  let idxLns = zip [1..] (lines txt) in -- indexed list of lines
-    unlines $ map snd(mapIf (\(x,y)-> (x,(doChange (Ch Whole wht) y))) (\(x,_)-> x `elem` ns) idxLns)
+  unlines $ map snd(mapIf (\(x,y)-> (x,(doChange (Ch Whole wht) y))) (\(x,_)-> x `elem` ns) (zip [1..] (lines txt)))
+    -- this has to be one of the top ten ugliest lines of haskell i've ever written i love it so much
 
 data Change = Ch Which What
   deriving (Read, Show)
