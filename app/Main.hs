@@ -1,7 +1,8 @@
 module Main (main) where
 
-import System.Environment         -- for getArgs
-import Text.Read                  -- for readMaybe
+import System.Environment (getArgs)
+import System.Directory (doesFileExist)
+import Text.Read (readMaybe)
 import qualified Data.Map as M    -- for M.Map
 import Data.Map ((!?))
 import Data.List (isPrefixOf)
@@ -10,28 +11,36 @@ import GHC.IO.Handle (hPutStr)
 
 main :: IO ()
 main = do
-  args <- getArgs -- check if this contains a string "-nostdin" or if the last element is a valid file path
-  arg <- getContents -- only do this if neither above are true
-  putStrLn $ teh (args <+> arg) []
+  args' <- getArgs
+  (args, b) <- rdFrmStdIn args' -- if last argument is a valid file name then replace it with the contents and/or if
+  if b then do -- there is a nostdin flag passed remove it and set b to false to skip reading arg from stdin
+    arg <- getContents
+    case (teh (args <+> arg) []) of
+      Left err -> putStdErr err
+      Right succ -> putStr succ
+  else
+    case (teh args []) of
+      Left err -> putStdErr err
+      Right succ -> putStr succ
 
-teh :: [String] -> [Change] -> String
-teh [] [] = "whoosie doopsie run me with arguments or run teh -h for help" -- no arguments were passed
+teh :: [String] -> [Change] -> Either String String
+teh [] [] = Left "whoosie doopsie run me with arguments or run teh -h for help" -- no arguments were passed
 teh [x] [] =
-  if x == "-h" then help
-  else if x == "penguin" then pod
-  else "whoosie doopsie run me with more than one argument or run teh -h for help" -- only one argument was passed
-teh [x] xs = doChanges xs x -- base case, one argument left and changes to apply to it
-teh [] xs = "whoops I have these changes to do but nothing to do them too " <> (show xs)
+  if x == "-h" then Right help
+  else if x == "penguin" then Right pod
+  else Left "whoosie doopsie run me with more than one argument or run teh -h for help" -- only one argument was passed
+teh [x] xs = Right $ doChanges xs x -- base case, one argument left and changes to apply to it
+teh [] xs = Left $ "whoops I have these changes to do but nothing to do them too " <> (show xs)
 teh (x:xs) chgs =
-  if x == "-h" then help
-  else if x == "penguin" then pod
+  if x == "-h" then Right help
+  else if x == "penguin" then Right pod
   else -- check if it can be read as a Change
     case (readMaybe x :: Maybe Change) of
       Just ch -> teh xs $ chgs <+> ch -- save this Change in a list and recurse until the last argument
       Nothing ->  -- check for custom macro
         case (chgMacros !? x) of
           Nothing -> -- macro not found
-            x <> " not recognized as command"
+            Left $ x <> " not recognized as command"
           Just macchgs -> -- macro found, add to list of changes and recurse
             teh xs (chgs <> macchgs)
 
@@ -99,7 +108,13 @@ help :: String
 help = "I'll get to it"
 
 chgMacros :: M.Map String [ Change ]
-chgMacros = M.empty
+chgMacros =
+  M.fromList [("indent"
+              , [ Ch Each (Ins "  " 0)])
+             ,("paren"
+              , [ Ch Whole (Ins "("   0  )
+                , Ch Whole (Ins ")" (-1))])
+             ]
 
 takeEnd :: Int -> [a] -> [a]
 takeEnd n  = (reverse . take n . reverse)
@@ -128,3 +143,17 @@ mapIf f b (x:xs) =
 
 putStdErr :: String -> IO()
 putStdErr = hPutStr stderr
+
+rdFrmStdIn :: [String] -> IO ([String], Bool)
+rdFrmStdIn [] = return ([],False)
+rdFrmStdIn sts = do
+  if "--nostdin" `elem` sts then
+    let (pre, post) = break ("--nostdin"==) sts in -- remove nostdin arg and don't read stdin for next arg
+      return (pre <> (tail post),False)
+  else do
+    isfile <- doesFileExist (head $ takeEnd 1 sts)
+    if isfile then do -- replace filename withe file contents and return list with False for no stdin
+      file <- readFile (head $ takeEnd 1 sts)
+      return ((dropEnd 1 sts)<+>file,False)
+    else  -- return list of text unmodified with True to read last arg from stdin
+      return (sts, True)
