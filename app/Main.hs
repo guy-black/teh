@@ -8,8 +8,8 @@ import Data.List (sort, isPrefixOf)
 
 main :: IO ()
 main = do
-  args <- getArgs
-  arg <- getContents
+  args <- getArgs -- check if this contains a string "-nostdin" or if the last element is a valid file path
+  arg <- getContents -- only do this if neither above are true
   putStrLn $ teh (args <+> arg) []
 
 teh :: [String] -> [Change] -> String
