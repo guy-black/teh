@@ -4,7 +4,9 @@ import System.Environment         -- for getArgs
 import Text.Read                  -- for readMaybe
 import qualified Data.Map as M    -- for M.Map
 import Data.Map ((!?))
-import Data.List (sort, isPrefixOf)
+import Data.List (isPrefixOf)
+import GHC.IO.StdHandles (stderr)
+import GHC.IO.Handle (hPutStr)
 
 main :: IO ()
 main = do
@@ -123,3 +125,6 @@ mapIf f b (x:xs) =
     (f x):(mapIf f b xs)
   else
     x : (mapIf f b xs)
+
+putStdErr :: String -> IO()
+putStdErr = hPutStr stderr
