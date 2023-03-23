@@ -1,0 +1,7 @@
+fromList
+  [ ( "indent"
+    , [Ch Each (Ins "  " 0)])
+  , ( "paren"
+    , [Ch Whole (Ins "("   0 )
+      ,Ch Whole (Ins ")" (-1))])
+  ]

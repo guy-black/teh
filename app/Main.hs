@@ -1,7 +1,7 @@
 module Main (main) where
 
 import System.Environment (getArgs)
-import System.Directory (doesFileExist)
+import System.Directory (doesFileExist, XdgDirectory(XdgConfig), getXdgDirectory)
 import Text.Read (readMaybe)
 import qualified Data.Map as M    -- for M.Map
 import Data.Map ((!?))
@@ -11,38 +11,43 @@ import GHC.IO.Handle (hPutStr)
 
 main :: IO ()
 main = do
-  args' <- getArgs
+  args' <- getArgs -- get args passed in
+  confDir <- getXdgDirectory XdgConfig ".teh" -- get path for where the user .teh conffile would be if it exists
+  (confErr, confMac) <- seekMacs confDir -- Tuple of String and Map String [Change] if it was read with no problem string will
+  (localErr, localMac) <- seekMacs ".teh" -- be empty, if no file or parse error string will say that with empty map
   (args, b) <- rdFrmStdIn args' -- if last argument is a valid file name then replace it with the contents and/or if
   if b then do -- there is a nostdin flag passed remove it and set b to false to skip reading arg from stdin
     arg <- getContents
-    case (teh (args <+> arg) []) of
+    case (teh (confMac <> localMac) (args <+> arg) []) of
       Left err -> putStdErr err
       Right succ -> putStr succ
   else
-    case (teh args []) of
+    case (teh (confMac <> localMac) args []) of
       Left err -> putStdErr err
       Right succ -> putStr succ
 
-teh :: [String] -> [Change] -> Either String String
-teh [] [] = Left "whoosie doopsie run me with arguments or run teh -h for help" -- no arguments were passed
-teh [x] [] =
+teh :: M.Map String [ Change ] -> [String] -> [Change] -> Either String String
+teh _ [] [] = Left "whoosie doopsie run me with arguments or run teh -h for help" -- no arguments were passed
+teh mac [x] [] =
   if x == "-h" then Right help
   else if x == "penguin" then Right pod
+  else if x == "--listmacros" then Right (show mac) -- TODO pretty print this
   else Left "whoosie doopsie run me with more than one argument or run teh -h for help" -- only one argument was passed
-teh [x] xs = Right $ doChanges xs x -- base case, one argument left and changes to apply to it
-teh [] xs = Left $ "whoops I have these changes to do but nothing to do them too " <> (show xs)
-teh (x:xs) chgs =
+teh _ [x] xs = Right $ doChanges xs x -- base case, one argument left and changes to apply to it
+teh _ [] xs = Left $ "whoops I have these changes to do but nothing to do them too " <> (show xs)
+teh mac (x:xs) chgs =
   if x == "-h" then Right help
   else if x == "penguin" then Right pod
+  else if x == "--listmacros" then Right (show mac) -- TODO pretty print this
   else -- check if it can be read as a Change
     case (readMaybe x :: Maybe Change) of
-      Just ch -> teh xs $ chgs <+> ch -- save this Change in a list and recurse until the last argument
+      Just ch -> teh mac xs $ chgs <+> ch -- save this Change in a list and recurse until the last argument
       Nothing ->  -- check for custom macro
-        case (chgMacros !? x) of
+        case (mac !? x) of
           Nothing -> -- macro not found
             Left $ x <> " not recognized as command"
           Just macchgs -> -- macro found, add to list of changes and recurse
-            teh xs (chgs <> macchgs)
+            teh mac xs (chgs <> macchgs)
 
 doChanges :: [Change] -> String -> String
 doChanges [] txt = txt
@@ -107,14 +112,25 @@ pod =
 help :: String
 help = "I'll get to it"
 
-chgMacros :: M.Map String [ Change ]
-chgMacros =
-  M.fromList [("indent"
+seekMacs :: FilePath ->  IO (String, (M.Map String [Change]))
+seekMacs f = do
+  exist <- doesFileExist f
+  if exist then do
+    file <- readFile f
+    case readMaybe file::Maybe (M.Map String [Change]) of
+      Just m -> return ("",m)
+      Nothing -> return ("could not parse " <> f, M.empty)
+  else
+    return (f <> " not found", M.empty)
+
+{--
+    M.fromList [("indent"
               , [ Ch Each (Ins "  " 0)])
              ,("paren"
               , [ Ch Whole (Ins "("   0  )
                 , Ch Whole (Ins ")" (-1))])
              ]
+--}
 
 takeEnd :: Int -> [a] -> [a]
 takeEnd n  = (reverse . take n . reverse)
