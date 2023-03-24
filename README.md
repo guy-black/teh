@@ -5,10 +5,6 @@ Because sed gets clunky and unpleasant for anything more than a find and replace
 TODO
   make a more substantial default .teh file
     -- bracketing, square bracketing, shaving off an amount, code comments
-  move from String to Text
-    -- literally just ctrl+a ctrl+p teh 'Ch Whole (Fr "String" "T.Text)'
-       and then deal with the type errors from there
-       also overloaded strings is cool too i guess
   polish this readme
 
 TODO but like later in the future
