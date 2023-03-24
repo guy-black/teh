@@ -1,6 +1,9 @@
 fromList
+# comment
   [ ( "indent"
+# for each line add two spaces in front
     , [Ch Each (Ins "  " 0)])
+# add a ( in front and a ) in back
   , ( "paren"
     , [Ch Whole (Ins "("   0 )
       ,Ch Whole (Ins ")" (-1))])

@@ -18,36 +18,38 @@ main = do
   (args, b) <- rdFrmStdIn args' -- if last argument is a valid file name then replace it with the contents and/or if
   if b then do -- there is a nostdin flag passed remove it and set b to false to skip reading arg from stdin
     arg <- getContents
-    case (teh (confMac <> localMac) (args <+> arg) []) of
+    case (teh ((confErr, confMac), (localErr, localMac)) (args <+> arg) []) of
       Left err -> putStdErr err
       Right succ -> putStr succ
   else
-    case (teh (confMac <> localMac) args []) of
+    case (teh ((confErr, confMac), (localErr, localMac)) args []) of
       Left err -> putStdErr err
       Right succ -> putStr succ
 
-teh :: M.Map String [ Change ] -> [String] -> [Change] -> Either String String
+teh :: ((String, M.Map String [ Change ]),(String, M.Map String [ Change ])) -> [String] -> [Change] -> Either String String
 teh _ [] [] = Left "whoosie doopsie run me with arguments or run teh -h for help" -- no arguments were passed
-teh mac [x] [] =
+teh m@((cErr,cMac),(lErr,lMac)) [x] [] =
   if x == "-h" then Right help
   else if x == "penguin" then Right pod
-  else if x == "--listmacros" then Right (show mac) -- TODO pretty print this
+  else if x == "--listmacros" then Right $ printMacros m
   else Left "whoosie doopsie run me with more than one argument or run teh -h for help" -- only one argument was passed
 teh _ [x] xs = Right $ doChanges xs x -- base case, one argument left and changes to apply to it
 teh _ [] xs = Left $ "whoops I have these changes to do but nothing to do them too " <> (show xs)
-teh mac (x:xs) chgs =
+teh m@((cErr,cMac),(lErr,lMac)) (x:xs) chgs =
   if x == "-h" then Right help
   else if x == "penguin" then Right pod
-  else if x == "--listmacros" then Right (show mac) -- TODO pretty print this
+  else if x == "--listmacros" then Right $ printMacros m
   else -- check if it can be read as a Change
     case (readMaybe x :: Maybe Change) of
-      Just ch -> teh mac xs $ chgs <+> ch -- save this Change in a list and recurse until the last argument
+      Just ch -> teh m xs $ chgs <+> ch -- save this Change in a list and recurse until the last argument
       Nothing ->  -- check for custom macro
-        case (mac !? x) of
+        -- <> for Map favors left
+        -- if both Maps have a macro with the same key, use local one
+        case ((lMac<>cMac) !? x) of
           Nothing -> -- macro not found
             Left $ x <> " not recognized as command"
           Just macchgs -> -- macro found, add to list of changes and recurse
-            teh mac xs (chgs <> macchgs)
+            teh m xs (chgs <> macchgs)
 
 doChanges :: [Change] -> String -> String
 doChanges [] txt = txt
@@ -110,27 +112,25 @@ pod =
 \t3h PeNgU1N oF d00m"
 
 help :: String
-help = "I'll get to it"
+help =
+  "Usage: teh [options]\n\
+  \   by default teh reads from StdIn for text to apply changes to.  To disable this either pass the --nostdin flag or\n\
+  \   pass a filename as the final argument \
+  \   -h will bring you this menu and --listmacros will list all macros found in the config folder and in the local directory\
+  \   macros can be written in the .teh file in a directory or in your xdgconfig directory\
+  \   commands are written in the form of 'Ch <Whole, Each, Only [1, 2, 3]> (<Fr \"find\" \"replce\", Rem 0 1, Ins 0 \"insert\">)'\
+  \   See README for more details
 
 seekMacs :: FilePath ->  IO (String, (M.Map String [Change]))
 seekMacs f = do
   exist <- doesFileExist f
   if exist then do
     file <- readFile f
-    case readMaybe file::Maybe (M.Map String [Change]) of
+    case readMaybe (uncomment file)::Maybe (M.Map String [Change]) of
       Just m -> return ("",m)
       Nothing -> return ("could not parse " <> f, M.empty)
   else
     return (f <> " not found", M.empty)
-
-{--
-    M.fromList [("indent"
-              , [ Ch Each (Ins "  " 0)])
-             ,("paren"
-              , [ Ch Whole (Ins "("   0  )
-                , Ch Whole (Ins ")" (-1))])
-             ]
---}
 
 takeEnd :: Int -> [a] -> [a]
 takeEnd n  = (reverse . take n . reverse)
@@ -173,3 +173,9 @@ rdFrmStdIn sts = do
       return ((dropEnd 1 sts)<+>file,False)
     else  -- return list of text unmodified with True to read last arg from stdin
       return (sts, True)
+
+uncomment :: String -> String
+uncomment = (unlines . filter (\x->head x /= '#') . lines)
+
+printMacros :: ((String, M.Map String [ Change ]),(String, M.Map String [ Change ])) -> String
+printMacros ((cErr,cMac),(lErr,lMac)) = ("from <xdgconfig>/.teh\n"<>cErr<>(show cMac)<>"\n"<>"from <cwd>/.teh\n"<>lErr<>(show lMac))
