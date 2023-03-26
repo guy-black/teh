@@ -59,7 +59,7 @@ doChanges [] txt = txt
 doChanges (x:xs) txt = doChanges xs $ doChange x txt
 
 doChange :: Change -> T.Text -> T.Text
-doChange (Ch Whole wht) txt = -- applying change to whole blob of text
+doChange (Whole wht) txt = -- applying change to whole blob of text
   case wht of
     Ins tx n ->
       if n >= 0 then -- counting forward
@@ -82,19 +82,19 @@ doChange (Ch Whole wht) txt = -- applying change to whole blob of text
     Fr find repl ->
       T.replace find repl txt
 
-doChange (Ch Each wht) txt =
-  T.unlines ( map (doChange (Ch Whole wht)) (T.lines txt))
+doChange (Each wht) txt =
+  T.unlines ( map (doChange (Whole wht)) (T.lines txt))
 
-doChange (Ch (Only ns) wht) txt =
-  T.unlines $ map snd(mapIf (\(x,y)-> (x,(doChange (Ch Whole wht) y))) (\(x,_)-> x `elem` ns) (zip [1..] (T.lines txt)))
+doChange (Only ns wht) txt =
+  T.unlines $ map snd(mapIf (\(x,y)-> (x,(doChange (Whole wht) y))) (\(x,_)-> x `elem` ns) (zip [1..] (T.lines txt)))
     -- this has to be one of the top ten ugliest T.lines of haskell i've ever written i love it so much
 
-data Change = Ch Which What
-  deriving (Read, Show)
+-- data Change = Ch Which What
+--   deriving (Read, Show)
 
-data Which = Whole
-           | Each
-           | Only [Int]
+data Change = Whole What
+            | Each What
+            | Only [Int] What
   deriving (Read, Show)
 
 data What = Fr T.Text T.Text
