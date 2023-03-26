@@ -92,15 +92,38 @@ doChange (Only ns wht) txt =
 -- data Change = Ch Which What
 --   deriving (Read, Show)
 
-data Change = Whole What
-            | Each What
-            | Only [Int] What
+-- -------------------IMPORTANT NOTE IMPORTANT NOTE IMPORTANT NOTE------------
+-- the data structure previously named Change has now been renamed Edit and takes a [What]
+-- also the data structure previously called What will now be called Change
+-- macros will now be a list of Changes with a defualt Target
+-- macros can be called as the [Change] in a manually typed out Edit  or can be called on their own and
+-- will be run with the associated Target
+
+
+data Edit  = Whole [Change]
+            | Each [Change]
+            | Only [Int] [Change]
   deriving (Read, Show)
 
-data What = Fr T.Text T.Text
+data Change = Fr T.Text T.Text
           | Ins T.Text Int
           | Rem Int Int
   deriving (Read, Show)
+
+data Target = Whl
+            | Ech
+            | Nly [Int]
+  deriving (Read, Show)
+
+target :: Target -> ( [Change] -> Edit )
+target Whl = Whole
+target Ech = Each
+target Nly ns = Only ns
+
+newtype Macros = M.Map Text ([Change], Target)
+
+
+
 
 (<+>) :: [a] -> a -> [a]
 (<+>) xs x = xs<>[x]
