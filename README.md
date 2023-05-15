@@ -3,16 +3,32 @@
 Because sed gets clunky and unpleasant for anything more than a find and replace.  Teh is meant to be much simpler to use for common things I wish I knew how to use sed for without googling how to do blank in sed and sifting through so much cruft instead of just getting back to what I was sediting text for anyway
 
 TODO
-  keep reworking Change for all constructors to have a [What] to be done to the lines
 
-  macros should instead be a Map Text ([ What ], ([What] -> Change))
-  a Text label mapped to a list of What paired with a default Constructor
-  to make a Change if not already given
-  may need to make a separate datatype called chgCons with instances of Read/Show
-  to make into the ([What] -> Change) type value
-  this way a macro can be specifically applied to either Whole Each or Only, for
-  versatility, but also have a defualt constructor to use
-  ie the paren macro should default to Whole if not specified for Each or Only
+  Macro are now Map Text Edit
+  Edit is just newtype of ([Change], Target)
+  macro can still be read in from .teh and read with the read instance
+  new syntax will look like in .teh2
+
+  need to write a funtion to parse each arg passed better than just read
+
+  before all this strip all white space
+  first check and see if arg == some index in macros
+    if so load that macro else
+  then check if arg can be read as a [Change]
+    if so read it as the list of changes with the def target
+  try to read a target from beginning of list
+    if found,
+       try to read rest as [ Change ]
+        if so return that [Change] with the Target
+        if not return error
+    if not return error
+
+lookForTarget :: Text -> Text -> Maybe Target
+lookForTarget _ "" = Nothing
+lookForTarget pre post =
+  case (readMaybe (pre <> (T.head post))::Target) of
+    Nothing -> lookForTarget (pre<>(T.head post)) (T.tail post)
+    Just t -> Just t
 
   make a more substantial default .teh file
     -- bracketing, square bracketing, shaving off an amount, code comments

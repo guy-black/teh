@@ -100,19 +100,17 @@ doChange (Only ns wht) txt =
 -- will be run with the associated Target
 
 
-data Edit  = Whole [Change]
-            | Each [Change]
-            | Only [Int] [Change]
-  deriving (Read, Show)
+
+type Edit  = ([Change],Target)
 
 data Change = Fr T.Text T.Text
           | Ins T.Text Int
           | Rem Int Int
   deriving (Read, Show)
 
-data Target = Whl
-            | Ech
-            | Nly [Int]
+data Target = Whole
+            | Each
+            | Only [Int]
   deriving (Read, Show)
 
 target :: Target -> ( [Change] -> Edit )
@@ -120,7 +118,7 @@ target Whl = Whole
 target Ech = Each
 target Nly ns = Only ns
 
-newtype Macros = M.Map Text ([Change], Target)
+type Macros = M.Map Text Edit
 
 
 
