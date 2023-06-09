@@ -50,3 +50,7 @@ TODO but like later in the future
 
   paramaterized macros
 
+
+
+***** note ******
+switch back to stack lts resolver when ghc verstion hits 9.2.8

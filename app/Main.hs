@@ -54,40 +54,51 @@ teh m@((cErr,cMac),(lErr,lMac)) (x:xs) chgs =
           Just macchgs -> -- macro found, add to list of changes and recurse
             teh m xs (chgs <> macchgs)
 
-doChanges :: [Change] -> T.Text -> T.Text
-doChanges [] txt = txt
-doChanges (x:xs) txt = doChanges xs $ doChange x txt
+-- this can probably be a fold
+-- essentially a wrapper to call doEdit with each of the list of Edits
+doEdits :: [Edit] -> T.Text -> T.Text
+doEdits [] txt = txt
+doEdits (x:xs) txt = doEdits xs $ doEdit x txt
 
-doChange :: Change -> T.Text -> T.Text
-doChange (Whole wht) txt = -- applying change to whole blob of text
-  case wht of
-    Ins tx n ->
+-- first checks if the edit has ano changes, and if so ignores it all together
+-- if the list of changes is nonempty then use the Target from the edit to only doChanges to the correct part of the text
+doEdit :: Edit -> T.Text -> T.Text
+doEdit ([], _) txt = txt -- no changes means no edit to do
+-- do changes just to the whole body of text
+doEdit (chgs, Whole) txt =
+  doChanges chgs txt
+-- do changes to each individual line of text
+doEdit (chgs, Each) txt =
+  T.unlines ( map (doChanges chgs) (T.lines txt))
+-- only do changes to the numbered lines given to Only
+doEdit (chgs, Only ns) txt =
+  T.unlines $ map snd(mapIf (\(x,y)-> (x,(doChanges chgs y))) (\(x,_)-> x `elem` ns) (zip [1..] (T.lines txt)))
+
+-- unconcerned with target, only has a list of Changes to do and a Text to do them to
+doChanges :: [Change] -> T.Text -> T.Text
+doChanges chg txt = -- applying change to whole blob of text
+  case chg of
+    [] -> txt -- no more changes to do return final text
+    (Ins tx n):chgs ->
       if n >= 0 then -- counting forward
-        (T.take n txt) <> tx <> (T.drop n txt)
+        doChanges chgs ((T.take n txt) <> tx <> (T.drop n txt))
       else -- counting backward
-        (dropEnd ((abs n)-1) txt) <> tx <> (takeEnd ((abs n)-1) txt)
-    Rem a b ->
+        doChanges chgs ((dropEnd ((abs n)-1) txt) <> tx <> (takeEnd ((abs n)-1) txt))
+    (Rem a b):chgs ->
       if b==0 then
-        txt -- delete nothing
+        doChanges chgs txt -- delete nothing
       else if a >= 0 then -- counting foward for skipped letters
         if b > 0 then -- deleting foward
-          (T.take a txt) <> (T.drop (a+b) txt)
+          doChanges chgs ((T.take a txt) <> (T.drop (a+b) txt))
         else -- deleting back
-          (T.dropEnd (abs b) (T.take a txt)) <> T.drop a txt
+          doChanges chgs ((T.dropEnd (abs b) (T.take a txt)) <> T.drop a txt)
       else -- counting back for skipped letters
         if b > 0 then -- deleting foward
-          (dropEnd (abs a) txt) <> (T.drop b (takeEnd (abs a) txt))
+          doChanges chgs ((dropEnd (abs a) txt) <> (T.drop b (takeEnd (abs a) txt)))
         else -- deleting back
-          dropEnd ((abs a)+(abs b)) txt <> (takeEnd (abs a) txt)
-    Fr find repl ->
-      T.replace find repl txt
-
-doChange (Each wht) txt =
-  T.unlines ( map (doChange (Whole wht)) (T.lines txt))
-
-doChange (Only ns wht) txt =
-  T.unlines $ map snd(mapIf (\(x,y)-> (x,(doChange (Whole wht) y))) (\(x,_)-> x `elem` ns) (zip [1..] (T.lines txt)))
-    -- this has to be one of the top ten ugliest T.lines of haskell i've ever written i love it so much
+          (dropEnd ((abs a)+(abs b)) txt <> (takeEnd (abs a) txt))
+    (Fr find repl):chgs ->
+      doChanges chgs (T.replace find repl txt)
 
 -- data Change = Ch Which What
 --   deriving (Read, Show)
@@ -113,12 +124,14 @@ data Target = Whole
             | Only [Int]
   deriving (Read, Show)
 
-target :: Target -> ( [Change] -> Edit )
-target Whl = Whole
-target Ech = Each
-target Nly ns = Only ns
+{- I think I can comment this out safely idk we'll see
+target :: Target -> [Change] -> Edit
+target Whole = Whole
+target Each = Each
+target Only ns = Only ns
+-}
 
-type Macros = M.Map Text Edit
+type Macros = M.Map T.Text Edit
 
 
 
