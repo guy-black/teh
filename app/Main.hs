@@ -16,20 +16,32 @@ main :: IO ()
 main = do
   args' <- getArgs >>= (return . (map T.pack)) -- get args passed in
   confDir <- getXdgDirectory XdgConfig ".teh" >>= (return . T.pack) -- get path for where the user .teh conffile would be if it exists
-  (confErr, confMac) <- seekMacs confDir -- Tuple of T.Text and Map T.Text [Change] if it was read with no problem string will
-  (localErr, localMac) <- seekMacs ".teh" -- be empty, if no file or parse error string will say that with empty map
-  (args, b) <- rdFrmStdIn args' -- if last argument is a valid file name then replace it with the contents and/or if
-  if b then do -- there is a nostdin flag passed remove it and set b to false to skip reading arg from stdin
-    arg <- getContents >>= (return . T.pack)
-    case (teh ((confErr, confMac), (localErr, localMac)) (args <+> arg) []) of
-      Left err -> putStdErr err
-      Right succ -> putStr (T.unpack succ)
-  else
-    case (teh ((confErr, confMac), (localErr, localMac)) args []) of
-      Left err -> putStdErr err
-      Right succ -> putStr (T.unpack succ)
+  eitherconf <- seekMacs confDir -- Tuple of T.Text and Map T.Text [Change] if it was read with no problem string will
+  eitherlocal <- seekMacs ".teh" -- be empty, if no file or parse error string will say that with empty map
+  proceed <- howToProceed args' -- determine whether to end early or not, and whether to read from stdin
+  let (macErrors, combMacs) = combineMacros eitherconf eitherlocal
+{--
+  case proceed of
+    Stop Help -> putTxt help
+    Stop Mac -> putTxt ppmacs (macErrors, combMacs)
+    Stop Penguin -> putTxt pod
+    WithStdin ->
+      case (parseargs combMacs args') of
+        Left err -> putStdErr err
+        Right pargs ->
+          stdin <- getContents >>= (return . T.pack)
+          putTxt (teh pargs stdin)
+    WoStdin (newargs, txt) ->
+      case (parseargs combMacs newargs) of
+        Left err -> putStdErr err
+        Right pargs ->
+          putTxt (teh pargs txt)
+--}
+  return ()
 
-teh :: ((T.Text, M.Map T.Text [ Change ]),(T.Text, M.Map T.Text [ Change ])) -> [T.Text] -> [Change] -> Either T.Text T.Text
+-- teh list of edits Text to change
+-- teh :: [Edit] -> T.Text -> T.Text
+{--
 teh _ [] [] = Left "whoosie doopsie run me with arguments or run teh -h for help" -- no arguments were passed
 teh m@((cErr,cMac),(lErr,lMac)) [x] [] =
   if x == "-h" then Right help
@@ -53,12 +65,12 @@ teh m@((cErr,cMac),(lErr,lMac)) (x:xs) chgs =
             Left $ x <> " not recognized as command"
           Just macchgs -> -- macro found, add to list of changes and recurse
             teh m xs (chgs <> macchgs)
-
+--}
 -- this can probably be a fold
 -- essentially a wrapper to call doEdit with each of the list of Edits
-doEdits :: [Edit] -> T.Text -> T.Text
-doEdits [] txt = txt
-doEdits (x:xs) txt = doEdits xs $ doEdit x txt
+teh :: [Edit] -> T.Text -> T.Text
+teh [] txt = txt
+teh (x:xs) txt = teh xs $ doEdit x txt
 
 -- first checks if the edit has ano changes, and if so ignores it all together
 -- if the list of changes is nonempty then use the Target from the edit to only doChanges to the correct part of the text
@@ -158,16 +170,26 @@ help =
   \   commands are written in the form of 'Ch <Whole, Each, Only [1, 2, 3]> (<Fr \"find\" \"replce\", Rem 0 1, Ins 0 \"insert\">)'\
   \   See README for more details "
 
-seekMacs :: T.Text ->  IO (T.Text, (M.Map T.Text [Change]))
+seekMacs :: T.Text ->  IO (Either T.Text Macros)
 seekMacs f = do
   exist <- doesFileExist $ T.unpack f
   if exist then do
     file <- (readFile $ T.unpack f) >>= (return . T.pack)
-    case readMaybeT (uncomment file)::Maybe (M.Map T.Text [Change]) of
-      Just m -> return ("",m)
-      Nothing -> return ("could not parse " <> f, M.empty)
+    case readMaybeT (uncomment file)::Maybe (Macros) of
+      Just m -> return (Right m)
+      Nothing -> return (Left $ "could not parse " <> f)
   else
-    return (f <> " not found", M.empty)
+    return (Left $ f <> " not found")
+
+-- takes the config file then the local file
+combineMacros :: Either T.Text Macros -> Either T.Text Macros -> (T.Text, Macros)
+combineMacros conf local =
+  case (conf, local) of
+    (Left cErr, Left lErr) -> (cErr <> lErr, M.empty)
+    (Right cMac, Left lErr) -> (lErr, cMac)
+    (Left cErr, Right lMac) -> (cErr, lMac)
+    (Right cMac, Right lMac) -> ("", lMac <> cMac) -- <> for Map favors left if both have same key and local overrides conf so local on left
+
 
 takeEnd :: Int -> T.Text -> T.Text
 takeEnd n  = (T.reverse . T.take n . T.reverse)
@@ -195,10 +217,16 @@ mapIf f b (x:xs) =
 putStdErr :: T.Text -> IO()
 putStdErr = hPutStr stderr . T.unpack
 
+
+{-- pretty sure I can remove this whole thing
+-- process raw list of args to check whether or not to read from stdIn
+-- if --nostdin is passed as an argument, ignore stdin and treat the text of the last arguemnt as the text to modify
+-- else if last argument is a valid filename, ignore stdin and treat the text of the file as the text to modify
+-- else read from stdin for text to modify
 rdFrmStdIn :: [T.Text] -> IO ([T.Text], Bool)
 rdFrmStdIn [] = return ([],False)
 rdFrmStdIn sts = do
-  if "--nostdin" `elem` sts then
+  if "--nostdin" `elem` sts then -- --nostdin passed as an argument, the last argument passed will be treated as the target text
     let (pre, post) = break ("--nostdin"==) sts in -- remove nostdin arg and don't read stdin for next arg
       return (pre <> (tail post),False)
   else do
@@ -208,6 +236,37 @@ rdFrmStdIn sts = do
       return ((dropLast 1 sts)<+>file,False)
     else  -- return list of text unmodified with True to read last arg from stdin
       return (sts, True)
+      --}
+
+
+howToProceed :: [T.Text] -> IO Proceed
+howToProceed sts =
+  if "-h" `elem` sts || "--help" `elem` sts then
+    return $ Stop Help
+  else if "--show-macros" `elem` sts then
+    return $ Stop Macs
+  else if "--penguin" `elem` sts then
+    return $ Stop Penguin
+  else if "--nostdin" `elem` sts then -- --nostdin passed as an argument, the last argument passed will be treated as the target text
+    let (pre, post) = break ("--nostdin"==) sts
+        (eds, txt)  = ((pre<>(((drop 1) . (dropLast 1)) post)),(takeLast 1 post)) -- remove nostdin arg and don't read stdin for next arg
+    in return $ WoStdin (eds, mconcat txt)
+  else do
+    isfile <- doesFileExist $ T.unpack (head $ takeLast 1 sts)
+    if isfile then do -- replace filename withe file contents and return list with False for no stdin
+      file <- (readFile $ T.unpack (head $ takeLast 1 sts)) >>= (return . T.pack)
+      return $ WoStdin ((dropLast 1 sts), file)
+    else  -- return list of text unmodified with True to read last arg from stdin
+      return WithStdIn
+
+
+data Proceed = WithStdIn
+             | WoStdin ([T.Text], T.Text)
+             | Stop Cause
+
+data Cause = Help
+           | Macs
+           | Penguin
 
 -- filter out any lines that begin with the character #
 uncomment :: T.Text -> T.Text
@@ -227,3 +286,8 @@ readMaybeT = readMaybe . T.unpack
 readT :: Read a => T.Text ->  a
 readT = read . T.unpack
 
+putTxt :: T.Text -> IO ()
+putTxt = putStr . T.unpack
+
+parseargs :: Macros -> [T.Text] -> Either T.Text [Edit]
+parseargs _ _ = Left "error"
