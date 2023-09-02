@@ -4,6 +4,21 @@ Because sed gets clunky and unpleasant for anything more than a find and replace
 
 TODO
 
+
+just need to test all functions and rewite teh to work with the new data types
+and also parseargs and printmacros too
+
+
+
+
+
+
+
+
+OLDNOTES
+
+kept in case i need them
+
   Macro are now Map Text Edit
   Edit is just newtype of ([Change], Target)
   macro can still be read in from .teh and read with the read instance

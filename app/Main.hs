@@ -8,6 +8,7 @@ import Text.Read (readMaybe)
 import qualified Data.Map as M    -- for M.Map
 import Data.Map ((!?))
 import Data.List (isPrefixOf)
+import Data.Either (partitionEithers)
 import qualified Data.Text as T
 import GHC.IO.StdHandles (stderr)
 import GHC.IO.Handle (hPutStr)
@@ -16,28 +17,72 @@ main :: IO ()
 main = do
   args' <- getArgs >>= (return . (map T.pack)) -- get args passed in
   confDir <- getXdgDirectory XdgConfig ".teh" >>= (return . T.pack) -- get path for where the user .teh conffile would be if it exists
-  eitherconf <- seekMacs confDir -- Tuple of T.Text and Map T.Text [Change] if it was read with no problem string will
-  eitherlocal <- seekMacs ".teh" -- be empty, if no file or parse error string will say that with empty map
+  conmac@(conerr, conmacs) <- seekMacs confDir -- Tuple of T.Text and Map T.Text [Change] if it was read with no problem string will
+  locmac@(locerr, locmacs) <- seekMacs ".teh" -- be empty, if no file or parse error string will say that with empty map
   proceed <- howToProceed args' -- determine whether to end early or not, and whether to read from stdin
-  let (macErrors, combMacs) = combineMacros eitherconf eitherlocal
-{--
+  let (macErrors, combMacs) = combineMacros conmac locmac
   case proceed of
     Stop Help -> putTxt help
-    Stop Mac -> putTxt ppmacs (macErrors, combMacs)
+    Stop Macs -> putTxt $ printMacros (macErrors, combMacs)
     Stop Penguin -> putTxt pod
-    WithStdin ->
-      case (parseargs combMacs args') of
-        Left err -> putStdErr err
-        Right pargs ->
-          stdin <- getContents >>= (return . T.pack)
-          putTxt (teh pargs stdin)
-    WoStdin (newargs, txt) ->
-      case (parseargs combMacs newargs) of
-        Left err -> putStdErr err
-        Right pargs ->
-          putTxt (teh pargs txt)
---}
-  return ()
+    WithStdIn ->
+      wstdin (parseargs combMacs args')
+    WoStdIn (newargs, txt) ->
+      wostdin (parseargs combMacs newargs) txt
+
+wstdin :: Either T.Text [Edit] -> IO ()
+wstdin (Left err) = putStdErr err
+wstdin (Right pargs) = do
+  stdin <- getContents >>= (return . T.pack)
+  putTxt (teh pargs stdin)
+
+wostdin :: Either T.Text [Edit] -> T.Text -> IO ()
+wostdin (Left err) _ = putStdErr err
+wostdin (Right pargs) txt = putTxt (teh pargs txt)
+
+seekMacs :: T.Text ->  IO (T.Text, Macros)
+seekMacs f = do
+  exist <- doesFileExist $ T.unpack f
+  if exist then do
+    file <- (readFile $ T.unpack f) >>= (return . T.pack)
+    let (err, m) = parseMacs file in
+      if err=="" then
+        return (f<> "parsed with no errors", m)
+      else
+        return ("errors for "<>f<>"\n"<>err, m)
+  else
+    return (f <> " not found", M.empty)
+
+parseMacs :: T.Text -> (T.Text, Macros)
+parseMacs txt =
+  (\(xs, ms)->(T.unlines xs, M.fromList ms)) $ -- convert list of errors to one big error, and list of (Text, Edit) to Macros
+  partitionEithers $ -- convert list of Either error (Text, Edit) to (list of errors, list of (Text, Edit))
+  map parseMac $ -- convert each line into either an error, or a (Text, Edit)
+  zip [1..] $ -- number each line
+  map (\x->"("<>x<>")") $ -- wrap each line in parenthesis
+  T.lines txt -- break into list of lines of text
+--  M.fromList $
+--  map (\(tx,ta,ch)->(tx,(ta,ch))) $
+--  map (\x-> read x::(T.Text, Target, [Change])) $
+--  map "("<>x<>")"
+-- this worked in ghci
+-- here slightly different
+-- first let linestxt = lines txt
+-- then map \x->"("<>x<>")" linestxt
+-- then func to either read as (Text, Target, [Change]) or give error
+-- from list Tupes into macros, and save rest as reported errros
+
+parseMac :: (Int, T.Text) -> Either T.Text (T.Text, Edit)
+parseMac (i, txt) =
+  case (readMaybeT $ "("<>txt<>")"  :: Maybe (T.Text, Target, [Change])) of
+    Just m ->
+      Right $ (\(tx,ta,ch)->(tx,(ta,ch))) m
+    Nothing ->
+      case (readMaybeT $ "("<>txt<>")"  :: Maybe (T.Text, Target, Change)) of
+        Just m ->
+          Right $ (\(tx,ta,ch)->(tx,(ta,[ch]))) m
+        Nothing -> Left $ "could not parse "<>txt<>" on line "<>showT i
+
 
 -- teh list of edits Text to change
 -- teh :: [Edit] -> T.Text -> T.Text
@@ -75,15 +120,15 @@ teh (x:xs) txt = teh xs $ doEdit x txt
 -- first checks if the edit has ano changes, and if so ignores it all together
 -- if the list of changes is nonempty then use the Target from the edit to only doChanges to the correct part of the text
 doEdit :: Edit -> T.Text -> T.Text
-doEdit ([], _) txt = txt -- no changes means no edit to do
+doEdit (_, []) txt = txt -- no changes means no edit to do
 -- do changes just to the whole body of text
-doEdit (chgs, Whole) txt =
+doEdit (Whole, chgs) txt =
   doChanges chgs txt
 -- do changes to each individual line of text
-doEdit (chgs, Each) txt =
+doEdit (Each, chgs) txt =
   T.unlines ( map (doChanges chgs) (T.lines txt))
 -- only do changes to the numbered lines given to Only
-doEdit (chgs, Only ns) txt =
+doEdit (Only ns, chgs) txt =
   T.unlines $ map snd(mapIf (\(x,y)-> (x,(doChanges chgs y))) (\(x,_)-> x `elem` ns) (zip [1..] (T.lines txt)))
 
 -- unconcerned with target, only has a list of Changes to do and a Text to do them to
@@ -112,36 +157,18 @@ doChanges chg txt = -- applying change to whole blob of text
     (Fr find repl):chgs ->
       doChanges chgs (T.replace find repl txt)
 
--- data Change = Ch Which What
---   deriving (Read, Show)
 
--- -------------------IMPORTANT NOTE IMPORTANT NOTE IMPORTANT NOTE------------
--- the data structure previously named Change has now been renamed Edit and takes a [What]
--- also the data structure previously called What will now be called Change
--- macros will now be a list of Changes with a defualt Target
--- macros can be called as the [Change] in a manually typed out Edit  or can be called on their own and
--- will be run with the associated Target
-
-
-
-type Edit  = ([Change],Target)
+type Edit  = (Target, [Change])
 
 data Change = Fr T.Text T.Text
-          | Ins T.Text Int
-          | Rem Int Int
+            | Ins T.Text Int
+            | Rem Int Int
   deriving (Read, Show)
 
 data Target = Whole
             | Each
             | Only [Int]
   deriving (Read, Show)
-
-{- I think I can comment this out safely idk we'll see
-target :: Target -> [Change] -> Edit
-target Whole = Whole
-target Each = Each
-target Only ns = Only ns
--}
 
 type Macros = M.Map T.Text Edit
 
@@ -170,25 +197,10 @@ help =
   \   commands are written in the form of 'Ch <Whole, Each, Only [1, 2, 3]> (<Fr \"find\" \"replce\", Rem 0 1, Ins 0 \"insert\">)'\
   \   See README for more details "
 
-seekMacs :: T.Text ->  IO (Either T.Text Macros)
-seekMacs f = do
-  exist <- doesFileExist $ T.unpack f
-  if exist then do
-    file <- (readFile $ T.unpack f) >>= (return . T.pack)
-    case readMaybeT (uncomment file)::Maybe (Macros) of
-      Just m -> return (Right m)
-      Nothing -> return (Left $ "could not parse " <> f)
-  else
-    return (Left $ f <> " not found")
-
 -- takes the config file then the local file
-combineMacros :: Either T.Text Macros -> Either T.Text Macros -> (T.Text, Macros)
-combineMacros conf local =
-  case (conf, local) of
-    (Left cErr, Left lErr) -> (cErr <> lErr, M.empty)
-    (Right cMac, Left lErr) -> (lErr, cMac)
-    (Left cErr, Right lMac) -> (cErr, lMac)
-    (Right cMac, Right lMac) -> ("", lMac <> cMac) -- <> for Map favors left if both have same key and local overrides conf so local on left
+combineMacros :: (T.Text, Macros) -> (T.Text, Macros) -> (T.Text, Macros)
+combineMacros (cErr, cMac) (lErr,lMac) =
+  (cErr<>lErr, lMac<>cMac) -- <> for Map favors left if both have same key and local overrides conf so local on left
 
 
 takeEnd :: Int -> T.Text -> T.Text
@@ -250,18 +262,18 @@ howToProceed sts =
   else if "--nostdin" `elem` sts then -- --nostdin passed as an argument, the last argument passed will be treated as the target text
     let (pre, post) = break ("--nostdin"==) sts
         (eds, txt)  = ((pre<>(((drop 1) . (dropLast 1)) post)),(takeLast 1 post)) -- remove nostdin arg and don't read stdin for next arg
-    in return $ WoStdin (eds, mconcat txt)
+    in return $ WoStdIn (eds, mconcat txt)
   else do
     isfile <- doesFileExist $ T.unpack (head $ takeLast 1 sts)
     if isfile then do -- replace filename withe file contents and return list with False for no stdin
       file <- (readFile $ T.unpack (head $ takeLast 1 sts)) >>= (return . T.pack)
-      return $ WoStdin ((dropLast 1 sts), file)
+      return $ WoStdIn ((dropLast 1 sts), file)
     else  -- return list of text unmodified with True to read last arg from stdin
       return WithStdIn
 
 
 data Proceed = WithStdIn
-             | WoStdin ([T.Text], T.Text)
+             | WoStdIn ([T.Text], T.Text)
              | Stop Cause
 
 data Cause = Help
@@ -272,10 +284,13 @@ data Cause = Help
 uncomment :: T.Text -> T.Text
 uncomment = (T.unlines . filter (\x->T.head x /= '#') . T.lines)
 
+
+printMacros :: (T.Text, Macros) -> T.Text
+printMacros _ = "I'll do it this afternooooon"
 -- eventually this will be replaced with a funtion that will generate a pretty piece of text to show all in scope macros and any parse errors
 -- for now it just kind of sorta technically works if you squint a bit and don't enjoy life
-printMacros :: ((T.Text, M.Map T.Text [ Change ]),(T.Text, M.Map T.Text [ Change ])) -> T.Text
-printMacros ((cErr,cMac),(lErr,lMac)) = ("from <xdgconfig>/.teh\n"<>cErr<>(showT cMac)<>"\n"<>"from <cwd>/.teh\n"<>lErr<>(showT lMac))
+-- printMacros :: ((T.Text, M.Map T.Text [ Change ]),(T.Text, M.Map T.Text [ Change ])) -> T.Text
+-- printMacros ((cErr,cMac),(lErr,lMac)) = ("from <xdgconfig>/.teh\n"<>cErr<>(showT cMac)<>"\n"<>"from <cwd>/.teh\n"<>lErr<>(showT lMac))
 
 showT :: Show a => a -> T.Text
 showT = T.pack . show

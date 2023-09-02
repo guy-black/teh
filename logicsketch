@@ -37,3 +37,20 @@ data Which = Whole
 
 data What = Ins Text Int
           | Del Int Int
+
+
+
+## Argument Parsing
+
+-- check if entire argument can be read as an Edit
+  -- if true then that is the Edit
+-- else then check if argument can be read as an (Target, Change)
+  -- if yes then \(x,y)->(x.[y]) or \x->(fst x, [snd x]) and use as the Edit
+-- else then check if filter (`isSuffixOf` arg) $ keys macros is empty
+  -- if so then can't parse argument as macro or edit
+-- else let longestkey = takeLast 1 $ Data.List.sortOn T.length $ filter (`isSuffixOf` arg) $ keys macros to get the macro
+with the longest key that is a suffix of the argument check if the arg==longestkey to see if the arg is just the macro name.
+  -- if it is just the macro name then use the Edit associated with that key in the Macros
+-- else check if dropEnd (length longestkey) arg can be read as a Target
+  -- if so then use that Target with the [Changes] from the macro for the Edit
+  -- if not then can't parse the arguement as macro or edit
