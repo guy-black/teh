@@ -14,31 +14,24 @@ import GHC.IO.StdHandles (stderr)
 import GHC.IO.Handle (hPutStr)
 
 main :: IO ()
-main = do
-  args' <- getArgs >>= (return . (map T.pack)) -- get args passed in
+main = getArgs >>= putStrLn . unlines
+{-- main = do
+  args <- getArgs >>= (return . (map T.pack)) -- get args passed in
   confDir <- getXdgDirectory XdgConfig ".teh" >>= (return . T.pack) -- get path for where the user .teh conffile would be if it exists
   conmac@(conerr, conmacs) <- seekMacs confDir -- Tuple of T.Text and Map T.Text [Change] if it was read with no problem string will
   locmac@(locerr, locmacs) <- seekMacs ".teh" -- be empty, if no file or parse error string will say that with empty map
-  proceed <- howToProceed args' -- determine whether to end early or not, and whether to read from stdin
   let (macErrors, combMacs) = combineMacros conmac locmac
+  proceed <- howToProceed combMacs args -- determine whether to end early or not, and whether to read from stdin
   case proceed of
     Stop Help -> putTxt help
     Stop Macs -> putTxt $ printMacros (macErrors, combMacs)
     Stop Penguin -> putTxt pod
-    WithStdIn ->
-      wstdin (parseargs combMacs args')
-    WoStdIn (newargs, txt) ->
-      wostdin (parseargs combMacs newargs) txt
-
-wstdin :: Either T.Text [Edit] -> IO ()
-wstdin (Left err) = putStdErr err
-wstdin (Right pargs) = do
-  stdin <- getContents >>= (return . T.pack)
-  putTxt (teh pargs stdin)
-
-wostdin :: Either T.Text [Edit] -> T.Text -> IO ()
-wostdin (Left err) _ = putStdErr err
-wostdin (Right pargs) txt = putTxt (teh pargs txt)
+    Stop (ArgParseErr err) -> putStdErr err
+    WithStdIn edits -> do
+      stdin <- getContents >>= (return . T.pack)
+      putTxt $ teh edits stdin
+    WoStdIn (edits, txt) ->
+      putTxt $ teh edits txt --}
 
 seekMacs :: T.Text ->  IO (T.Text, Macros)
 seekMacs f = do
@@ -60,17 +53,8 @@ parseMacs txt =
   map parseMac $ -- convert each line into either an error, or a (Text, Edit)
   zip [1..] $ -- number each line
   map (\x->"("<>x<>")") $ -- wrap each line in parenthesis
+  filter (\x->T.head x /= '#') $ -- remove comments from .teh
   T.lines txt -- break into list of lines of text
---  M.fromList $
---  map (\(tx,ta,ch)->(tx,(ta,ch))) $
---  map (\x-> read x::(T.Text, Target, [Change])) $
---  map "("<>x<>")"
--- this worked in ghci
--- here slightly different
--- first let linestxt = lines txt
--- then map \x->"("<>x<>")" linestxt
--- then func to either read as (Text, Target, [Change]) or give error
--- from list Tupes into macros, and save rest as reported errros
 
 parseMac :: (Int, T.Text) -> Either T.Text (T.Text, Edit)
 parseMac (i, txt) =
@@ -251,9 +235,9 @@ rdFrmStdIn sts = do
       --}
 
 
-howToProceed :: [T.Text] -> IO Proceed
-howToProceed sts =
-  if "-h" `elem` sts || "--help" `elem` sts then
+howToProceed :: Macros -> [T.Text] -> IO Proceed
+howToProceed mac sts =
+  if "-h" `elem` sts || "--help" `elem` sts || sts == [] then
     return $ Stop Help
   else if "--show-macros" `elem` sts then
     return $ Stop Macs
@@ -262,28 +246,32 @@ howToProceed sts =
   else if "--nostdin" `elem` sts then -- --nostdin passed as an argument, the last argument passed will be treated as the target text
     let (pre, post) = break ("--nostdin"==) sts
         (eds, txt)  = ((pre<>(((drop 1) . (dropLast 1)) post)),(takeLast 1 post)) -- remove nostdin arg and don't read stdin for next arg
-    in return $ WoStdIn (eds, mconcat txt)
+    in
+      case parseargs mac eds of
+        Left err -> return $ Stop $ ArgParseErr err
+        Right edits -> return $ WoStdIn (edits, mconcat txt)
   else do
     isfile <- doesFileExist $ T.unpack (head $ takeLast 1 sts)
-    if isfile then do -- replace filename withe file contents and return list with False for no stdin
-      file <- (readFile $ T.unpack (head $ takeLast 1 sts)) >>= (return . T.pack)
-      return $ WoStdIn ((dropLast 1 sts), file)
-    else  -- return list of text unmodified with True to read last arg from stdin
-      return WithStdIn
+    if isfile then -- replace filename withe file contents and return list with False for no stdin
+      case parseargs mac $ dropLast 1 sts of
+        Left err -> return $ Stop $ ArgParseErr err
+        Right edits -> do
+          file <- (readFile $ T.unpack (head $ takeLast 1 sts)) >>= (return . T.pack)
+          return $ WoStdIn (edits, file)
+    else
+      case parseargs mac sts of
+        Left err -> return $ Stop $ ArgParseErr err
+        Right edits -> return $ WithStdIn edits
 
 
-data Proceed = WithStdIn
-             | WoStdIn ([T.Text], T.Text)
+data Proceed = WithStdIn [Edit]
+             | WoStdIn ([Edit], T.Text)
              | Stop Cause
 
 data Cause = Help
            | Macs
            | Penguin
-
--- filter out any lines that begin with the character #
-uncomment :: T.Text -> T.Text
-uncomment = (T.unlines . filter (\x->T.head x /= '#') . T.lines)
-
+           | ArgParseErr T.Text
 
 printMacros :: (T.Text, Macros) -> T.Text
 printMacros _ = "I'll do it this afternooooon"
@@ -305,4 +293,4 @@ putTxt :: T.Text -> IO ()
 putTxt = putStr . T.unpack
 
 parseargs :: Macros -> [T.Text] -> Either T.Text [Edit]
-parseargs _ _ = Left "error"
+parseargs _ _ = Left "error function not implemented yet"
