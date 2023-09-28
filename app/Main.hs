@@ -7,15 +7,15 @@ import System.Directory (doesFileExist, XdgDirectory(XdgConfig), getXdgDirectory
 import Text.Read (readMaybe)
 import qualified Data.Map as M    -- for M.Map
 import Data.Map ((!?))
-import Data.List (isPrefixOf)
+import Data.List (isSuffixOf, sortOn)
 import Data.Either (partitionEithers)
+import Data.Char (isSpace, isDigit)
 import qualified Data.Text as T
 import GHC.IO.StdHandles (stderr)
 import GHC.IO.Handle (hPutStr)
 
 main :: IO ()
-main = getArgs >>= putStrLn . unlines
-{-- main = do
+main = do
   args <- getArgs >>= (return . (map T.pack)) -- get args passed in
   confDir <- getXdgDirectory XdgConfig ".teh" >>= (return . T.pack) -- get path for where the user .teh conffile would be if it exists
   conmac@(conerr, conmacs) <- seekMacs confDir -- Tuple of T.Text and Map T.Text [Change] if it was read with no problem string will
@@ -31,7 +31,7 @@ main = getArgs >>= putStrLn . unlines
       stdin <- getContents >>= (return . T.pack)
       putTxt $ teh edits stdin
     WoStdIn (edits, txt) ->
-      putTxt $ teh edits txt --}
+      putTxt $ teh edits txt
 
 seekMacs :: T.Text ->  IO (T.Text, Macros)
 seekMacs f = do
@@ -53,7 +53,7 @@ parseMacs txt =
   map parseMac $ -- convert each line into either an error, or a (Text, Edit)
   zip [1..] $ -- number each line
   map (\x->"("<>x<>")") $ -- wrap each line in parenthesis
-  filter (\x->T.head x /= '#') $ -- remove comments from .teh
+  filter (\x->T.take 1 x /= "#") $ -- remove comments from .teh
   T.lines txt -- break into list of lines of text
 
 parseMac :: (Int, T.Text) -> Either T.Text (T.Text, Edit)
@@ -213,56 +213,36 @@ mapIf f b (x:xs) =
 putStdErr :: T.Text -> IO()
 putStdErr = hPutStr stderr . T.unpack
 
-
-{-- pretty sure I can remove this whole thing
--- process raw list of args to check whether or not to read from stdIn
--- if --nostdin is passed as an argument, ignore stdin and treat the text of the last arguemnt as the text to modify
--- else if last argument is a valid filename, ignore stdin and treat the text of the file as the text to modify
--- else read from stdin for text to modify
-rdFrmStdIn :: [T.Text] -> IO ([T.Text], Bool)
-rdFrmStdIn [] = return ([],False)
-rdFrmStdIn sts = do
-  if "--nostdin" `elem` sts then -- --nostdin passed as an argument, the last argument passed will be treated as the target text
-    let (pre, post) = break ("--nostdin"==) sts in -- remove nostdin arg and don't read stdin for next arg
-      return (pre <> (tail post),False)
-  else do
-    isfile <- doesFileExist $ T.unpack (head $ takeLast 1 sts)
-    if isfile then do -- replace filename withe file contents and return list with False for no stdin
-      file <- (readFile $ T.unpack (head $ takeLast 1 sts)) >>= (return . T.pack)
-      return ((dropLast 1 sts)<+>file,False)
-    else  -- return list of text unmodified with True to read last arg from stdin
-      return (sts, True)
-      --}
-
-
 howToProceed :: Macros -> [T.Text] -> IO Proceed
 howToProceed mac sts =
-  if "-h" `elem` sts || "--help" `elem` sts || sts == [] then
-    return $ Stop Help
-  else if "--show-macros" `elem` sts then
-    return $ Stop Macs
-  else if "--penguin" `elem` sts then
-    return $ Stop Penguin
-  else if "--nostdin" `elem` sts then -- --nostdin passed as an argument, the last argument passed will be treated as the target text
-    let (pre, post) = break ("--nostdin"==) sts
-        (eds, txt)  = ((pre<>(((drop 1) . (dropLast 1)) post)),(takeLast 1 post)) -- remove nostdin arg and don't read stdin for next arg
-    in
-      case parseargs mac eds of
-        Left err -> return $ Stop $ ArgParseErr err
-        Right edits -> return $ WoStdIn (edits, mconcat txt)
-  else do
-    isfile <- doesFileExist $ T.unpack (head $ takeLast 1 sts)
-    if isfile then -- replace filename withe file contents and return list with False for no stdin
-      case parseargs mac $ dropLast 1 sts of
-        Left err -> return $ Stop $ ArgParseErr err
-        Right edits -> do
-          file <- (readFile $ T.unpack (head $ takeLast 1 sts)) >>= (return . T.pack)
-          return $ WoStdIn (edits, file)
-    else
-      case parseargs mac sts of
-        Left err -> return $ Stop $ ArgParseErr err
-        Right edits -> return $ WithStdIn edits
-
+  case sts of
+        []     -> return $ Stop Help
+        (s:ts) ->
+          if "-h" `elem` sts || "--help" `elem` sts then
+            return $ Stop Help
+          else if "--show-macros" `elem` sts then
+            return $ Stop Macs
+          else if "--penguin" `elem` sts then
+            return $ Stop Penguin
+          else if "--nostdin" `elem` sts then -- --nostdin passed as an argument, the last argument passed will be treated as the target text
+            let (pre, post) = break ("--nostdin"==) sts
+                (eds, txt)  = ((pre<>(((drop 1) . (dropLast 1)) post)),(takeLast 1 post)) -- remove nostdin arg and don't read stdin for next arg
+            in
+              case parseargs mac eds of
+                Left err -> return $ Stop $ ArgParseErr err
+                Right edits -> return $ WoStdIn (edits, mconcat txt)
+          else do
+            isfile <- doesFileExist $ T.unpack (mconcat $ takeLast 1 ts)
+            if isfile then -- replace filename withe file contents and return list with False for no stdin
+              case parseargs mac $ dropLast 1 sts of
+                Left err -> return $ Stop $ ArgParseErr err
+                Right edits -> do
+                  file <- (readFile $ T.unpack (mconcat $ takeLast 1 ts)) >>= (return . T.pack)
+                  return $ WoStdIn (edits, file)
+            else
+              case parseargs mac sts of
+                Left err -> return $ Stop $ ArgParseErr err
+                Right edits -> return $ WithStdIn edits
 
 data Proceed = WithStdIn [Edit]
              | WoStdIn ([Edit], T.Text)
@@ -280,6 +260,16 @@ printMacros _ = "I'll do it this afternooooon"
 -- printMacros :: ((T.Text, M.Map T.Text [ Change ]),(T.Text, M.Map T.Text [ Change ])) -> T.Text
 -- printMacros ((cErr,cMac),(lErr,lMac)) = ("from <xdgconfig>/.teh\n"<>cErr<>(showT cMac)<>"\n"<>"from <cwd>/.teh\n"<>lErr<>(showT lMac))
 
+-- if no value within ls is True for b then
+--   takeUntil b ls == ([], ls)
+-- if some value a within ls is True for b then for the first a
+--   takeuntil b ls == (prea<+>a,posta)
+takeUntil ::  (a -> Bool) -> [a] -> ([a],[a])
+takeUntil b ls =
+  case break b ls of
+    (_, []) -> ([], ls)
+    (pre, (r:st)) -> (pre<+>r,st)
+
 showT :: Show a => a -> T.Text
 showT = T.pack . show
 
@@ -293,4 +283,89 @@ putTxt :: T.Text -> IO ()
 putTxt = putStr . T.unpack
 
 parseargs :: Macros -> [T.Text] -> Either T.Text [Edit]
-parseargs _ _ = Left "error function not implemented yet"
+parseargs macs ts = parseargs' macs ts []
+
+parseargs' :: Macros -> [T.Text] -> [Edit] -> Either T.Text [Edit]
+parseargs' _ [] eds = Right $ reverse eds
+parseargs' macs (t:ts) eds =
+  case parsearg macs t of
+    Left err -> Left err
+    Right ed -> parseargs' macs ts (ed:eds)
+
+parsearg :: Macros -> T.Text -> Either T.Text Edit
+-- to safely call head on the list from T.words on the Text value
+parsearg _ "" = Left "Cannot parse empty argument.  Please check that you properly formatted your argumens"
+parsearg macs txt =
+  case macs !? txt of-- check if the whole argument is just a macro
+    Just ed -> Right ed
+    Nothing -> -- argument is not just a macro, it must start with a Target
+      let t = head $ T.words txt
+          c = T.unwords $ drop 1 $ T.words txt in
+        if any (t==) ["Whole","whole"] then  -- target is Whole
+          case macs !? c of -- the change is just a macro
+            Just (_,chs) -> Right (Whole, chs)
+            Nothing -> -- change needs to be parsed
+              case parseChgs macs c of
+                Left err -> Left err
+                Right chs -> Right (Whole, chs)
+        else if any (t==) ["Each", "each"] then  -- target is Each
+          case macs !? c of -- the change is just a macro
+            Just (_,chs) -> Right (Each, chs)
+            Nothing -> -- change needs to be parsed
+              case parseChgs macs c of
+                Left err -> Left err
+                Right chs -> Right (Each, chs)
+        else if any (t==) ["Only", "only"] then -- target is some Only, but need to find the numbers
+          let (l', r') = span (\ch -> or $ map ($ ch) [isSpace, isDigit]) $ T.unpack c -- TODO, rewrite with T.span why did I do this?
+              (l, r) = (T.pack l', T.pack r') in -- this pulls any numbers or white space immediately after the word Only
+            case (readMaybeT ("["<>(T.intercalate "," $ T.words l)<>"]")::Maybe [Int]) of
+              Nothing -> Left $ txt <> " is read with a Target Only, but " <> l <> " could not be read as [Int].  this is weird and you should look into it, assuming you is me.  if you is not me then you should make an issue on the github for this project to let me know kthx"
+              Just lns -> -- we have only and we have a full target now
+                case macs !? r of
+                  Just (_,chs) -> Right (Only lns, chs)
+                  Nothing -> -- change needs to be parsed
+                    case parseChgs macs r of
+                      Left err -> Left err
+                      Right chs -> Right (Only lns, chs)
+        else -- argument is not just a macro, and doesn't start with a Target
+          Left $ txt <> " is not recognized as a saved macro, and does not start with a Target."
+          -- at this point I know an empty argument would be passed out as an error
+
+parseChgs :: Macros -> T.Text -> Either T.Text [Change]
+-- handling an argument with no changes so parseChgs' doesn't have to
+-- parseChgs' interprets and empty [Text] as the base case and returns the accumulator [Changes]
+-- this prevents parseChgs' from producing and empty [Changes]
+parseChgs _ "" = Left "Argument only has a target, arguments must include either a macro, or a target followed by either a macro or changes.  Please check the formatting of your argmuents"
+parseChgs m t = parseChgs' m (wordsandquo t) []
+
+parseChgs' :: Macros -> [T.Text] -> [Change] -> Either T.Text [Change]
+parseChgs' m [] acc = Right $ reverse acc
+parseChgs' m (t:ts) acc = -- undefined
+  if any (t==) ["fr","FR","Fr"] then
+    undefined
+    -- this is a find and replace
+    -- the first two Texts of ts MUST start and end with "quotation marks"
+    -- if yes strip the marks of them and pass them to the Fr constructor and recurse with it appended to  acc
+  else undefined -- to make ghc happy until I finish this function
+
+-- like T.words, but concatenates a word that start's with '"' with all subsequent words until found a word that ends
+-- with '"' only if it's not preceded by a '\'
+wordsandquo :: T.Text -> [T.Text]
+wordsandquo t =
+  let (pre, rst) = break (\x->T.take 1 x == "\"") $ T.words t in
+    if rst == [] then -- there are no words that start with a quote, T.words will work fine
+      T.words t
+    else -- there are quotes
+      case takeUntil (\x->takeEnd 1 x == "\"") rst of -- take words up to the first one to end with a "
+        ([], _) ->  -- there was no closing quote, just treat as regular words
+          T.words t
+        (quo, aftquo) -> pre <> [(T.unwords quo)] <> (wordsandquo $ T.unwords aftquo)
+
+tmptxt :: T.Text
+tmptxt = "this is a Text value with no quotes"
+
+tmptxt2 :: T.Text
+tmptxt2 = "this is a \"Text typed value\" with \"no quotes\" ;)"
+
+tmptxt3 :: T.Text
+tmptxt3 = "this is a text value with a \"quote that never closes oh nooooo"
