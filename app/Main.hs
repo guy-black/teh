@@ -342,21 +342,51 @@ parseChgs' :: Macros -> [T.Text] -> [Change] -> Either T.Text [Change]
 parseChgs' m [] acc = Right $ reverse acc
 parseChgs' m (t:ts) acc = -- undefined
   if any (t==) ["fr","FR","Fr"] then
-    undefined
-    -- this is a find and replace
-    -- the first two Texts of ts MUST start and end with "quotation marks"
-    -- if yes strip the marks of them and pass them to the Fr constructor and recurse with it appended to  acc
-  else undefined -- to make ghc happy until I finish this function
+    case ts of
+      (a:b:cs) ->
+        if T.null a then -- a must be non empty, b can be empty
+          Left $ "first value passed to " <> t <> " must be nonempty"
+        else
+          parseChgs' m cs ((Fr a b):acc)
+      _ ->
+        Left $ "Error: " <> t <> " needs to be followed by two strings, but I found less than two"
+  else if any (t==) ["ins", "in", "Ins", "In"] then
+    case ts of
+      (a:b:cs) ->
+        case readMaybeT b::Maybe Int of
+          Nothing -> Left $ "Error: " <> t <> " expects a string and an integer, but " <> b <> " could not be parsed as an integer"
+          Just bint ->
+            if T.null a then
+              Left $ "Warning: " <> (T.unwords [t,a,b]) <> " is inserting and empty text, which does nothing.  Did you mean to remove that change or add text ot insert?"
+            else
+              parseChgs' m cs ((Ins a bint):acc)
+      _ ->
+        Left $ "Error: " <> t <> " needs to be followed by a string htenb a number, but I found less than two arguments after it"
+  else if any (t==) ["Rem", "rem", "Rm", "rm"] then
+    case ts of
+      (a:b:cs) ->
+        case readMaybeT a::Maybe Int of
+          Nothing -> Left $ "Error: " <> t <> " expects two integers but " <> a <> " could not be read as an integer"
+          Just aint ->
+            case readMaybeT b::Maybe Int of
+              Nothing -> Left $ "Error: " <> t <> " expects two integers but " <> b <> " could not be read as an integer"
+              Just bint -> parseChgs' m cs ((Rem aint bint):acc)
+      _ -> Left $ "Error: " <> t <> " expects two integers, but less than two arguments follow it"
+  else
+    Left $ "Error: " <> (T.unwords $ t:ts) <> " was expected to be a Change, but changes must start with Fr, Rem, or Ins.  Run with -h for more info"
 
 -- like T.words, but concatenates a word that start's with '"' with all subsequent words until found a word that ends
 -- with '"' only if it's not preceded by a '\'
+-- TODO: ignore closing escaped quote mark ending a quote
+-- ALSO: let's just strip the quotes here to make it easy on parseChgs'
+-- and then we get non quoted single word text arguments for free
 wordsandquo :: T.Text -> [T.Text]
 wordsandquo t =
   let (pre, rst) = break (\x->T.take 1 x == "\"") $ T.words t in
     if rst == [] then -- there are no words that start with a quote, T.words will work fine
       T.words t
     else -- there are quotes
-      case takeUntil (\x->takeEnd 1 x == "\"") rst of -- take words up to the first one to end with a "
+      case takeUntil (\x->takeEnd 1 x == "\"" && takeEnd 2 x /= "\\\"") rst of -- take words up to the first one to end with a non escaped "
         ([], _) ->  -- there was no closing quote, just treat as regular words
           T.words t
         (quo, aftquo) -> pre <> [(T.unwords quo)] <> (wordsandquo $ T.unwords aftquo)
