@@ -1,0 +1,5 @@
+
+- test to make sure everything works as it should
+- implement a -c <filpath> flag to add another conf file of macros to parse
+- implement a -ic <filepath> flag to ignore a conf file that would otherwise be parsed
+- write a better description for readme
