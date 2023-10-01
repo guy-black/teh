@@ -68,33 +68,6 @@ parseMac (i, txt) =
         Nothing -> Left $ "could not parse "<>txt<>" on line "<>showT i
 
 
--- teh list of edits Text to change
--- teh :: [Edit] -> T.Text -> T.Text
-{--
-teh _ [] [] = Left "whoosie doopsie run me with arguments or run teh -h for help" -- no arguments were passed
-teh m@((cErr,cMac),(lErr,lMac)) [x] [] =
-  if x == "-h" then Right help
-  else if x == "penguin" then Right pod
-  else if x == "--listmacros" then Right $ printMacros m
-  else Left "whoosie doopsie run me with more than one argument or run teh -h for help" -- only one argument was passed
-teh _ [x] xs = Right $ doChanges xs x -- base case, one argument left and changes to apply to it
-teh _ [] xs = Left $ "whoops I have these changes to do but nothing to do them too " <> (showT xs)
-teh m@((cErr,cMac),(lErr,lMac)) (x:xs) chgs =
-  if x == "-h" then Right help
-  else if x == "penguin" then Right pod
-  else if x == "--listmacros" then Right $ printMacros m
-  else -- check if it can be read as a Change
-    case (readMaybeT x :: Maybe Change) of
-      Just ch -> teh m xs $ chgs <+> ch -- save this Change in a list and recurse until the last argument
-      Nothing ->  -- check for custom macro
-        -- <> for Map favors left
-        -- if both Maps have a macro with the same key, use local one
-        case ((lMac<>cMac) !? x) of
-          Nothing -> -- macro not found
-            Left $ x <> " not recognized as command"
-          Just macchgs -> -- macro found, add to list of changes and recurse
-            teh m xs (chgs <> macchgs)
---}
 -- this can probably be a fold
 -- essentially a wrapper to call doEdit with each of the list of Edits
 teh :: [Edit] -> T.Text -> T.Text
@@ -211,7 +184,7 @@ mapIf f b (x:xs) =
     x : (mapIf f b xs)
 
 putStdErr :: T.Text -> IO()
-putStdErr = hPutStr stderr . T.unpack
+putStdErr = hPutStr stderr . T.unpack . (<>"\n")
 
 howToProceed :: Macros -> [T.Text] -> IO Proceed
 howToProceed mac sts =

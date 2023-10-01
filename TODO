@@ -3,3 +3,7 @@
 - implement a -c <filpath> flag to add another conf file of macros to parse
 - implement a -ic <filepath> flag to ignore a conf file that would otherwise be parsed
 - write a better description for readme
+- find and fix logic bug with Ins and Rem
+- rework macro processing
+  - should mapM seekMacs over list of locations to look for confs
+- write a pretty pring macros function
