@@ -1,9 +1,22 @@
 
 - test to make sure everything works as it should
-- implement a -c <filpath> flag to add another conf file of macros to parse
-- implement a -ic <filepath> flag to ignore a conf file that would otherwise be parsed
+- implement a -n flag to ignore trailing newline
+- implement a -w flag to wrap around on rem
 - write a better description for readme
-- find and fix logic bug with Ins and Rem
-- rework macro processing
-  - should mapM seekMacs over list of locations to look for confs
-- write a pretty pring macros function
+- write a pretty print macros function
+
+todo from parsed and squished macros:
+
+- look for and remove -n and -w flag
+- let flags::(Bool, Bool) where fst flags correlates to -n and snd flags to -w
+- look for and remove --nostdin, if it's there then set aside last argument as text to edit
+  - if it's not look for any -f flags and try to read their arguments as text files to edit
+    - if any can't be read exit with descriptive error
+  - if no --nostdin or -f flags then treat stdin as text to edit
+
+# misc notes on necessity of -f flag
+- but then what if the last and only argument is both a readable filename and a macro?
+  this could mean apply that macro to all stdin or use it's contents as text to edit with no edits
+  I could only read last arg as text to edit if there is more than one argument so if it's meant to be a macro
+  it could be moved back to avoid confusion, but then what if the edits need to be a particular order?
+  So I should add a -f flag to indicate a file to be read from
