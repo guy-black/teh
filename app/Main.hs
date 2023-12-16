@@ -13,6 +13,7 @@ import Data.Char (isSpace, isDigit)
 import qualified Data.Text as T
 import GHC.IO.StdHandles (stderr)
 import GHC.IO.Handle (hPutStr)
+import Control.Exception (try, SomeException, evaluate)
 
 
 main :: IO ()
@@ -24,8 +25,10 @@ main = do
     putTxt pod
   else do  -- no early exit case, start compiling list of macro files
     confDir <- getXdgDirectory XdgConfig ".teh" >>= (return . T.pack) -- get path for where the user .teh file should be
-    let (cflagmacs, argsminuscflag) = extArgs (=="-c") args
-    let (macstoignore, maclessargs) = extArgs (=="-ic") argsminuscflag
+    let (cflagmacs', argsminuscflag) = extArgs (=="-c") args
+    let (macstoignore', maclessargs) = extArgs (=="-ic") argsminuscflag
+    let cflagmacs = filter (/= "-c") cflagmacs' -- had to make extArgs return the flag with the argument so I need to
+    let macstoignore = filter (/= "-ic") macstoignore'-- add these lines to just have the argument
     let finalmaclist = (dedupe $ confDir:".teh":cflagmacs) `remAll` macstoignore -- final list of files to look for macros
     parsedMacsAndErrs <- mapM seekMacs finalmaclist -- convert our files to look for macros into a [(errors::T.Text, Macros)]
     if "--show-macros" `elem` maclessargs then -- we don't actually need to edit text, just parse macros and print details
@@ -33,8 +36,18 @@ main = do
     else do  -- we can squish our parsed marcros into one big Macros and toss forget errors or which file they came from
       let finalMacs = mconcat $ reverse $ map snd parsedMacsAndErrs
       -- mconcat will favor values to the left, but I want to favor values to the right, so reverse it first
-      return ()
-
+      let nwflags = (any (`elem`maclessargs) ["-n", "-N"],any (`elem`maclessargs) ["-w", "-W"]) -- (Bool, Bool) for -n and -w flags
+      let argsSansNW = maclessargs `remAll` ["-n", "-N", "-w", "-W"] -- arg list without -n and -w flags
+      let (tfargs, argsSansTF) = extArgs (\x-> any (x==) ["-t", "-T", "-f", "-F"]) argsSansNW
+      if not $ null tfargs then  -- some t and/or f flags were found
+        -- gonna need a whatTF function
+        -- check if -f args exist and can be read
+        -- if not should I go with what can be read and quietly output this to stderr or just close all together?
+        -- idk I'm sleepy
+        return ()
+      else -- no t or f flags, only editing text from stdin
+        -- should be able to move to the argument parsing stage now
+        return ()
 
 {--
   conmac@(conerr, conmacs) <- seekMacs confDir -- Tuple of T.Text and Map T.Text [Change] if it was read with no problem string will
@@ -57,12 +70,15 @@ seekMacs :: T.Text ->  IO (T.Text, Macros)
 seekMacs f = do
   exist <- doesFileExist $ T.unpack f
   if exist then do
-    file <- (readFile $ T.unpack f) >>= (return . T.pack)
-    let (err, m) = parseMacs file in
-      if err=="" then
-        return (f<> "parsed with no errors", m)
-      else
-        return ("errors for "<>f<>"\n"<>err, m)
+    file <- (try $ (readFile $ T.unpack f) >>= (return . T.pack) >>= evaluate) :: IO (Either SomeException T.Text)
+    case file of
+      Left _ -> return (f <> " could not be read", M.empty)
+      Right file' ->
+        let (err, m) = parseMacs file' in
+          if err=="" then
+            return (f<> "parsed with no errors", m)
+          else
+            return ("errors for "<>f<>"\n"<>err, m)
   else
     return (f <> " not found", M.empty)
 
@@ -332,8 +348,8 @@ takeUntil b ls =
     (_, []) -> ([], ls)
     (pre, (r:st)) -> (pre<+>r,st)
 
--- split a list into the values after a value that returns true and the rest of the list without the true values and their successor
--- or more concretely, will be used to pull out the arguments that directly follow a given flag and the rest of the args
+-- split a list into the values after a value that returns true and the rest of the list with the true values and their successor
+-- more concretely, will be used to pull out all instances of a given flag and the arg that follows from a bigger list
 extArgs :: (a -> Bool) -> [a] -> ([a], [a])
 extArgs f ls =
   case ls of
@@ -354,7 +370,7 @@ extArgs' _ (wnt, othr) [] = (wnt, othr) -- empty list to sort through, base case
 extArgs' _ (wnt, othr) [a] = (wnt, othr<+>a) -- one item list, other base case.  Now I just slap this together without even thinking
 extArgs' f (wnt, othr) (h:hh:rem) =
   if f h then -- checking if we want to add to the wanted accumulator
-    extArgs' f (wnt<+>hh, othr) rem -- we found what we want so we drop the flag and the argument and recurse with what's left
+    extArgs' f (wnt<+>h<+>hh, othr) rem -- we found what we want so we drop the flag and the argument and recurse with what's left
   else
     extArgs' f (wnt, othr<+>h) (hh:rem) -- not a flag we wanted, add it to the others and recurse
 
