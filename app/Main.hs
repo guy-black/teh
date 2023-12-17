@@ -24,11 +24,13 @@ main = do
   else if args == ["--penguin"] then do  -- hehe we have fun here :)
     putTxt pod
   else do  -- no early exit case, start compiling list of macro files
+    let ignoreErrors = "-ie" `elem` args
+    let args' = filter (/= "-ie") args
     confDir <- getXdgDirectory XdgConfig ".teh" >>= (return . T.pack) -- get path for where the user .teh file should be
-    let (cflagmacs', argsminuscflag) = extArgs (=="-c") args
+    let (cflagmacs', argsminuscflag) = extArgs (=="-c") args'
     let (macstoignore', maclessargs) = extArgs (=="-ic") argsminuscflag
-    let cflagmacs = filter (/= "-c") cflagmacs' -- had to make extArgs return the flag with the argument so I need to
-    let macstoignore = filter (/= "-ic") macstoignore'-- add these lines to just have the argument
+    let cflagmacs = map snd cflagmacs' -- had to make extArgs return the flag with the argument so I need to
+    let macstoignore = map snd macstoignore'-- add these lines to just have the argument
     let finalmaclist = (dedupe $ confDir:".teh":cflagmacs) `remAll` macstoignore -- final list of files to look for macros
     parsedMacsAndErrs <- mapM seekMacs finalmaclist -- convert our files to look for macros into a [(errors::T.Text, Macros)]
     if "--show-macros" `elem` maclessargs then -- we don't actually need to edit text, just parse macros and print details
@@ -39,12 +41,16 @@ main = do
       let nwflags = (any (`elem`maclessargs) ["-n", "-N"],any (`elem`maclessargs) ["-w", "-W"]) -- (Bool, Bool) for -n and -w flags
       let argsSansNW = maclessargs `remAll` ["-n", "-N", "-w", "-W"] -- arg list without -n and -w flags
       let (tfargs, argsSansTF) = extArgs (\x-> any (x==) ["-t", "-T", "-f", "-F"]) argsSansNW
-      if not $ null tfargs then  -- some t and/or f flags were found
-        -- gonna need a whatTF function
-        -- check if -f args exist and can be read
-        -- if not should I go with what can be read and quietly output this to stderr or just close all together?
-        -- idk I'm sleepy
-        return ()
+      if not $ null tfargs then do -- some t and/or f flags were found
+        let readStdIn = "--stdin" `elem` argsSansTF
+        let editsOnly = filter (/= "-stdin") argsSansTF -- no -n -w -t -f -ie or -stdin flags left, should only be edits now
+        (tfErrs, tfVals) <- whatTF ([],[]) tfargs
+        -- edit parsing function call goes here
+        if not ignoreErrors && not $ null tfErrs then -- if we're not ignoring errors and the list of errors isn't empty
+          putTxt "error on processing -t and -f flags"
+          putTxt $ T.unlines tfErrs
+        else
+          return () -- either there were no errors or we're ignoring them, paring edits now
       else -- no t or f flags, only editing text from stdin
         -- should be able to move to the argument parsing stage now
         return ()
@@ -65,6 +71,32 @@ main = do
     WoStdIn (edits, txt) ->
       putTxt $ teh edits txt
 --}
+
+-- take an accumulator, list of (flag, argument), and returns accumulator
+-- should only have to call once so won't bother with ergonomic wrapper
+whatTF :: ([T.Text], [T.Text]) -> [(T.Text, T.Text)] -> IO ([T.Text], [T.Text])
+whatTF acc@(eacc, tacc) tf =
+  case tf of
+    [] -> return acc -- base case
+    (hf, ha):t ->
+      if any (hf ==) ["-t", "-T"] then -- ha is a piece of text to edit, no error to report
+        whatTF (eacc, tacc<+>ha) t -- add it to tacc and recurse on t
+      else if any (hf ==) ["-f", "-F"] then do-- ha is a file to try and read
+        exists <- doesFileExist $ T.unpack ha -- check if ha exists
+        if not exists then -- the file doesn't exist
+          whatTF (eacc<+>("file " <> ha <> " doesn't seem to exist"), tacc) t
+        else do
+          file <- (try $ (readFile $ T.unpack ha) >>= (return . T.pack) >>= evaluate) :: IO (Either SomeException T.Text)
+          case file of -- check if ha can be read
+            Left _    -> whatTF (eacc<+>("file " <> ha <> " cannot be read as text"), tacc) t
+            Right txt -> whatTF (eacc, tacc<+>txt) t
+          -- if both then add contents to tacc, else add appropriate error to eacc
+      else -- well this ain't right
+        whatTF (eacc <+> ("Something went wront with either extArgs and " <> hf <> " got marked as a t or f flag \
+                          \even though it's not.  Maybe I should've actually made a real data type for the flags \
+                          \idk.  If you're me then fix this, if you're not me then please file an issue at \
+                          \github.com/guy-black/teh please and thanks :)"), tacc) t
+
 
 seekMacs :: T.Text ->  IO (T.Text, Macros)
 seekMacs f = do
@@ -151,10 +183,6 @@ doChanges chg txt = -- applying change to whole blob of text
       doChanges chgs (T.replace find repl txt)
 
 
--- takes the config file then the local file
-combineMacros :: [Macros] -> Macros
-combineMacros = mconcat . reverse -- <> for Map favors left if both have same key and local overrides conf so local on left
-
 
 {-- all of this funcitonality should be moved into main I think I'll be fine removing it all together
 howToProceed :: Macros -> [T.Text] -> IO Proceed
@@ -188,6 +216,10 @@ howToProceed mac sts =
                 Left err -> return $ Stop $ ArgParseErr err
                 Right edits -> return $ WithStdIn edits
 --}
+
+-- takes the config file then the local file
+combineMacros :: [Macros] -> Macros
+combineMacros = mconcat . reverse -- <> for Map favors left if both have same key and local overrides conf so local on left
 
 printMacros :: [(T.Text, Macros)] -> T.Text
 printMacros _ = "I'll do it this afternooooon"
@@ -350,7 +382,7 @@ takeUntil b ls =
 
 -- split a list into the values after a value that returns true and the rest of the list with the true values and their successor
 -- more concretely, will be used to pull out all instances of a given flag and the arg that follows from a bigger list
-extArgs :: (a -> Bool) -> [a] -> ([a], [a])
+extArgs :: (a -> Bool) -> [a] -> ([(a,a)], [a])
 extArgs f ls =
   case ls of
     [] -> ([],[]) -- an empty list, just double it
@@ -365,12 +397,12 @@ estArg _ (a:[]) = ([],[a]) -- again can't do anything with a singleton list
 extArg f ls@(a:aa) = extArg' f ([], []) ls -- this list has two or more values so now we can call the real function
 --}
 
-extArgs' :: (a -> Bool) -> ([a], [a]) -> [a] -> ([a], [a]) -- the less ergonomic function we actually need
+extArgs' :: (a -> Bool) -> ([(a,a)], [a]) -> [a] -> ([(a,a)], [a]) -- the less ergonomic function we actually need
 extArgs' _ (wnt, othr) [] = (wnt, othr) -- empty list to sort through, base case.  I remember when recursion was hard to understand
 extArgs' _ (wnt, othr) [a] = (wnt, othr<+>a) -- one item list, other base case.  Now I just slap this together without even thinking
 extArgs' f (wnt, othr) (h:hh:rem) =
   if f h then -- checking if we want to add to the wanted accumulator
-    extArgs' f (wnt<+>h<+>hh, othr) rem -- we found what we want so we drop the flag and the argument and recurse with what's left
+    extArgs' f (wnt<+>(h,hh), othr) rem -- we found what we want so we drop the flag and the argument and recurse with what's left
   else
     extArgs' f (wnt, othr<+>h) (hh:rem) -- not a flag we wanted, add it to the others and recurse
 
