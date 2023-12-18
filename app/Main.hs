@@ -45,10 +45,10 @@ main = do
         let readStdIn = "--stdin" `elem` argsSansTF
         let editsOnly = filter (/= "-stdin") argsSansTF -- no -n -w -t -f -ie or -stdin flags left, should only be edits now
         (tfErrs, tfVals) <- whatTF ([],[]) tfargs
-        -- edit parsing function call goes here
-        if not ignoreErrors && not $ null tfErrs then -- if we're not ignoring errors and the list of errors isn't empty
-          putTxt "error on processing -t and -f flags"
-          putTxt $ T.unlines tfErrs
+        let (edErrs, pEdits) = parseEdits finalMacs editsOnly ([],[])
+        if (not ignoreErrors) && (not $ null tfErrs) || (not $ null edErrs) then -- if we're not ignoring errors and the list of errors isn't empty
+          putTxt $ "errors on parsing -t and -f flags \n" <>  (T.unlines tfErrs)
+                         <> "\nerrors on parsing edits\n" <> (T.unlines edErrs)
         else
           return () -- either there were no errors or we're ignoring them, paring edits now
       else -- no t or f flags, only editing text from stdin
@@ -90,7 +90,6 @@ whatTF acc@(eacc, tacc) tf =
           case file of -- check if ha can be read
             Left _    -> whatTF (eacc<+>("file " <> ha <> " cannot be read as text"), tacc) t
             Right txt -> whatTF (eacc, tacc<+>txt) t
-          -- if both then add contents to tacc, else add appropriate error to eacc
       else -- well this ain't right
         whatTF (eacc <+> ("Something went wront with either extArgs and " <> hf <> " got marked as a t or f flag \
                           \even though it's not.  Maybe I should've actually made a real data type for the flags \
@@ -223,30 +222,29 @@ combineMacros = mconcat . reverse -- <> for Map favors left if both have same ke
 
 printMacros :: [(T.Text, Macros)] -> T.Text
 printMacros _ = "I'll do it this afternooooon"
--- eventually this will be replaced with a funtion that will generate a pretty piece of text to show all in scope macros and any parse errors
--- for now it just kind of sorta technically works if you squint a bit and don't enjoy life
--- printMacros :: ((T.Text, M.Map T.Text [ Change ]),(T.Text, M.Map T.Text [ Change ])) -> T.Text
--- printMacros ((cErr,cMac),(lErr,lMac)) = ("from <xdgconfig>/.teh\n"<>cErr<>(showT cMac)<>"\n"<>"from <cwd>/.teh\n"<>lErr<>(showT lMac))
 
--- if no value within ls is True for b then
---   takeUntil b ls == ([], ls)
--- if some value a within ls is True for b then for the first a
---   takeuntil b ls == (prea<+>a,posta)
+-- parseargs :: Macros -> [T.Text] -> Either T.Text [Edit]
+-- parseargs macs ts = parseargs' macs ts []
 
-parseargs :: Macros -> [T.Text] -> Either T.Text [Edit]
-parseargs macs ts = parseargs' macs ts []
+-- parseargs' :: Macros -> [T.Text] -> [Edit] -> Either T.Text [Edit]
+-- parseargs' _ [] eds = Right $ reverse eds
+-- parseargs' macs (t:ts) eds =
+--   case parsearg macs t of
+--     Left err -> Left err
+--     Right ed -> parseargs' macs ts (ed:eds)
 
-parseargs' :: Macros -> [T.Text] -> [Edit] -> Either T.Text [Edit]
-parseargs' _ [] eds = Right $ reverse eds
-parseargs' macs (t:ts) eds =
-  case parsearg macs t of
-    Left err -> Left err
-    Right ed -> parseargs' macs ts (ed:eds)
+-- macros, list of edits to parse, acc errs,edits, final errs,edits
+parseEdits :: Macros -> [T.Text] -> ([T.Text], [Edit]) -> ([T.Text], [Edit])
+parseEdits _ [] acc = acc -- base case
+parseEdits m (h:t) (eracc, edacc) =
+  case parseEdit m h of
+    Left err -> parseEdits m t (eracc<+>err, edacc)
+    Right ed -> parseEdits m t (eracc, edacc<+>ed)
 
-parsearg :: Macros -> T.Text -> Either T.Text Edit
+parseEdit :: Macros -> T.Text -> Either T.Text Edit
 -- to safely call head on the list from T.words on the Text value
-parsearg _ "" = Left "Cannot parse empty argument.  Please check that you properly formatted your argumens"
-parsearg macs txt =
+parseEdit _ "" = Left "Cannot parse empty argument.  Please check that you properly formatted your argumens"
+parseEdit macs txt =
   case macs !? txt of-- check if the whole argument is just a macro
     Just ed -> Right ed
     Nothing -> -- argument is not just a macro, it must start with a Target
@@ -286,7 +284,8 @@ parseChgs :: Macros -> T.Text -> Either T.Text [Change]
 -- handling an argument with no changes so parseChgs' doesn't have to
 -- parseChgs' interprets and empty [Text] as the base case and returns the accumulator [Changes]
 -- this prevents parseChgs' from producing and empty [Changes]
-parseChgs _ "" = Left "Argument only has a target, arguments must include either a macro, or a target followed by either a macro or changes.  Please check the formatting of your argmuents"
+parseChgs _ "" = Left "Argument only has a target, arguments must include either a macro, or a target followed by either\
+                       \ a macro or changes.  Please check the formatting of your argmuents"
 parseChgs m t = parseChgs' m (wordsandquo t) []
 
 parseChgs' :: Macros -> [T.Text] -> [Change] -> Either T.Text [Change]
@@ -374,6 +373,10 @@ wordsandquo t =
           T.words t
         (quo, aftquo) -> pre <> [(T.unwords quo)] <> (wordsandquo $ T.unwords aftquo)
 
+-- if no value within ls is True for b then
+--   takeUntil b ls == ([], ls)
+-- if some value a within ls is True for b then for the first a
+--   takeuntil b ls == (prea<+>a,posta)
 takeUntil ::  (a -> Bool) -> [a] -> ([a],[a])
 takeUntil b ls =
   case break b ls of

@@ -5,14 +5,6 @@
 - write a better description for readme
 - write a pretty print macros function
 
-todo from parsed and squished macros:
-
-- look for and remove -n and -w flag
-- let flags::(Bool, Bool) where fst flags correlates to -n and snd flags to -w
-- look for and remove --nostdin, if it's there then set aside last argument as text to edit
-  - if it's not look for any -f flags and try to read their arguments as text files to edit
-    - if any can't be read exit with descriptive error
-  - if no --nostdin or -f flags then treat stdin as text to edit
 
 # misc notes on necessity of -f flag
 - but then what if the last and only argument is both a readable filename and a macro?
