@@ -41,18 +41,23 @@ main = do
       let nwflags = (any (`elem`maclessargs) ["-n", "-N"],any (`elem`maclessargs) ["-w", "-W"]) -- (Bool, Bool) for -n and -w flags
       let argsSansNW = maclessargs `remAll` ["-n", "-N", "-w", "-W"] -- arg list without -n and -w flags
       let (tfargs, argsSansTF) = extArgs (\x-> any (x==) ["-t", "-T", "-f", "-F"]) argsSansNW
+      let editsOnly = filter (/= "-stdin") argsSansTF -- no -n -w -t -f -ie or -stdin flags left, should only be edits now
+      let (edErrs, pEdits) = parseEdits finalMacs editsOnly ([],[])
       if not $ null tfargs then do -- some t and/or f flags were found
         let readStdIn = "--stdin" `elem` argsSansTF
-        let editsOnly = filter (/= "-stdin") argsSansTF -- no -n -w -t -f -ie or -stdin flags left, should only be edits now
         (tfErrs, tfVals) <- whatTF ([],[]) tfargs
-        let (edErrs, pEdits) = parseEdits finalMacs editsOnly ([],[])
-        if (not ignoreErrors) && (not $ null tfErrs) || (not $ null edErrs) then -- if we're not ignoring errors and the list of errors isn't empty
-          putTxt $ "errors on parsing -t and -f flags \n" <>  (T.unlines tfErrs)
+        if (not ignoreErrors)&&((not $ null tfErrs)||(not $ null edErrs)) then -- if there are errors and we aren't ignoring them
+          putStdErr $ "errors on parsing -t and -f flags \n" <>  (T.unlines tfErrs)
                          <> "\nerrors on parsing edits\n" <> (T.unlines edErrs)
-        else
-          return () -- either there were no errors or we're ignoring them, paring edits now
+        else -- there are no errors, or we're just ignoring them
+          if readStdIn then -- we are editing tfVals and stdIn
+            return ()
+          else -- we are only editing tfVals
+            return ()
       else -- no t or f flags, only editing text from stdin
-        -- should be able to move to the argument parsing stage now
+        if (not ignoreErrors) && (not $ null edErrs) then -- if there are errors and we aren't ignoring them
+          putStdErr $ "errors on parsing edits\n" <>  (T.unlines edErrs)
+        else do
         return ()
 
 {--
@@ -137,49 +142,58 @@ parseMac (i, txt) =
 
 -- this can probably be a fold
 -- essentially a wrapper to call doEdit with each of the list of Edits
-teh :: [Edit] -> T.Text -> T.Text
-teh [] txt = txt
-teh (x:xs) txt = teh xs $ doEdit x txt
+teh :: (Bool, Bool) -> [Edit] -> T.Text -> T.Text
+teh _ [] txt = txt
+teh (nflag, wflag) (x:xs) txt =
+  -- not T.Null txt to the left of T.next will force the expression to resolve to false before erroring by calling T.last on ""
+  if nflag && (not $ T.null txt) && (T.last txt == '\n') then
+    -- on recurse set nflag to false as the trailing \n is already removed
+    (teh (False, wflag) xs $ doEdit wflag x $ T.dropEnd 1 txt) <> "\n"
+  else -- either nflag is false or there is no trailing \n
+    -- set nflag false becasue either it is false and there's no difference, or there is no trailing \n
+    -- and setting it to false makes && resolve correctly to false witout needing to check last character
+    -- also avoids ignoring any trailing \n added by previously applied edit
+    teh (False, wflag) xs $ doEdit wflag x txt
 
 -- first checks if the edit has ano changes, and if so ignores it all together
 -- if the list of changes is nonempty then use the Target from the edit to only doChanges to the correct part of the text
-doEdit :: Edit -> T.Text -> T.Text
-doEdit (_, []) txt = txt -- no changes means no edit to do
+doEdit :: Bool -> Edit -> T.Text -> T.Text
+doEdit _ (_, []) txt = txt -- no changes means no edit to do
 -- do changes just to the whole body of text
-doEdit (Whole, chgs) txt =
-  doChanges chgs txt
+doEdit wflag (Whole, chgs) txt =
+  doChanges wflag chgs txt
 -- do changes to each individual line of text
-doEdit (Each, chgs) txt =
-  T.unlines ( map (doChanges chgs) (T.lines txt))
+doEdit wflag (Each, chgs) txt =
+  T.unlines ( map (doChanges wflag chgs) (T.lines txt))
 -- only do changes to the numbered lines given to Only
-doEdit (Only ns, chgs) txt =
-  T.unlines $ map snd(mapIf (\(x,y)-> (x,(doChanges chgs y))) (\(x,_)-> x `elem` ns) (zip [1..] (T.lines txt)))
+doEdit wflag (Only ns, chgs) txt =
+  T.unlines $ map snd(mapIf (\(x,y)-> (x,(doChanges wflag chgs y))) (\(x,_)-> x `elem` ns) (zip [1..] (T.lines txt)))
 
 -- unconcerned with target, only has a list of Changes to do and a Text to do them to
-doChanges :: [Change] -> T.Text -> T.Text
-doChanges chg txt = -- applying change to whole blob of text
+doChanges :: Bool -> [Change] -> T.Text -> T.Text
+doChanges wflag chg txt = -- applying change to whole blob of text
   case chg of
     [] -> txt -- no more changes to do return final text
     (Ins tx n):chgs ->
       if n >= 0 then -- counting forward
-        doChanges chgs ((T.take n txt) <> tx <> (T.drop n txt))
+        doChanges wflag chgs ((T.take n txt) <> tx <> (T.drop n txt))
       else -- counting backward
-        doChanges chgs ((dropEnd ((abs n)-1) txt) <> tx <> (takeEnd ((abs n)-1) txt))
+        doChanges wflag chgs ((T.dropEnd ((abs n)-1) txt) <> tx <> (T.takeEnd ((abs n)-1) txt))
     (Rem a b):chgs ->
       if b==0 then
-        doChanges chgs txt -- delete nothing
+        doChanges wflag chgs txt -- delete nothing
       else if a >= 0 then -- counting foward for skipped letters
         if b > 0 then -- deleting foward
-          doChanges chgs ((T.take a txt) <> (T.drop (a+b) txt))
+          doChanges wflag chgs ((T.take a txt) <> (T.drop (a+b) txt))
         else -- deleting back
-          doChanges chgs ((T.dropEnd (abs b) (T.take a txt)) <> T.drop a txt)
+          doChanges wflag chgs ((T.dropEnd (abs b) (T.take a txt)) <> T.drop a txt)
       else -- counting back for skipped letters
         if b > 0 then -- deleting foward
-          doChanges chgs ((dropEnd (abs a) txt) <> (T.drop b (takeEnd (abs a) txt)))
+          doChanges wflag chgs ((T.dropEnd (abs a) txt) <> (T.drop b (T.takeEnd (abs a) txt)))
         else -- deleting back
-          (dropEnd ((abs a)+(abs b)) txt <> (takeEnd (abs a) txt))
+          (T.dropEnd ((abs a)+(abs b)) txt <> (T.takeEnd (abs a) txt))
     (Fr find repl):chgs ->
-      doChanges chgs (T.replace find repl txt)
+      doChanges wflag chgs (T.replace find repl txt)
 
 
 
@@ -368,7 +382,7 @@ wordsandquo t =
     if rst == [] then -- there are no words that start with a quote, T.words will work fine
       T.words t
     else -- there are quotes
-      case takeUntil (\x->takeEnd 1 x == "\"" && takeEnd 2 x /= "\\\"") rst of -- take words up to the first one to end with a non escaped "
+      case takeUntil (\x->T.takeEnd 1 x == "\"" && T.takeEnd 2 x /= "\\\"") rst of -- take words up to the first one to end with a non escaped "
         ([], _) ->  -- there was no closing quote, just treat as regular words
           T.words t
         (quo, aftquo) -> pre <> [(T.unwords quo)] <> (wordsandquo $ T.unwords aftquo)
@@ -421,11 +435,13 @@ readT = read . T.unpack
 putTxt :: T.Text -> IO ()
 putTxt = putStr . T.unpack
 
-takeEnd :: Int -> T.Text -> T.Text
-takeEnd n  = (T.reverse . T.take n . T.reverse)
 
-dropEnd :: Int -> T.Text -> T.Text
-dropEnd n  = (T.reverse . T.drop n . T.reverse)
+-- these functions were already in T.Text idk why I never noticed tf
+-- takeEnd :: Int -> T.Text -> T.Text
+-- takeEnd n  = (T.reverse . T.take n . T.reverse)
+--
+-- dropEnd :: Int -> T.Text -> T.Text
+-- dropEnd n  = (T.reverse . T.drop n . T.reverse)
 
 droplen :: T.Text -> T.Text -> T.Text
 droplen stub whole = T.drop (T.length stub) whole
