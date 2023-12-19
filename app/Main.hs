@@ -228,6 +228,7 @@ howToProceed mac sts =
               case parseargs mac sts of
                 Left err -> return $ Stop $ ArgParseErr err
                 Right edits -> return $ WithStdIn edits
+
 --}
 
 -- takes the config file then the local file
