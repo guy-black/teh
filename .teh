@@ -1,6 +1,7 @@
 "trim"    ,Whole, [Rem 0   1  ,Rem -1   1]
 "paren"   ,Whole, [Ins "(" 0  ,Ins ")" -1]
 "sqbrac"   ,Whole, [Ins "[" 0  ,Ins "]" -1]
+"hsblkcmt"   ,Whole, [Ins "{--\n" 0  ,Ins "\n--}" -1]
 "hslncmt" ,Each , [Ins "-- " 0]
 # ad
 sfasd

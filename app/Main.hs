@@ -142,58 +142,59 @@ parseMac (i, txt) =
 
 -- this can probably be a fold
 -- essentially a wrapper to call doEdit with each of the list of Edits
-teh :: (Bool, Bool) -> [Edit] -> T.Text -> T.Text
+teh :: Bool -> [Edit] -> T.Text -> T.Text
 teh _ [] txt = txt
-teh (nflag, wflag) (x:xs) txt =
+teh nflag (x:xs) txt =
   -- not T.Null txt to the left of T.next will force the expression to resolve to false before erroring by calling T.last on ""
   if nflag && (not $ T.null txt) && (T.last txt == '\n') then
     -- on recurse set nflag to false as the trailing \n is already removed
-    (teh (False, wflag) xs $ doEdit wflag x $ T.dropEnd 1 txt) <> "\n"
+    (teh False xs $ doEdit x $ T.dropEnd 1 txt) <> "\n"
   else -- either nflag is false or there is no trailing \n
     -- set nflag false becasue either it is false and there's no difference, or there is no trailing \n
     -- and setting it to false makes && resolve correctly to false witout needing to check last character
     -- also avoids ignoring any trailing \n added by previously applied edit
-    teh (False, wflag) xs $ doEdit wflag x txt
+    teh False xs $ doEdit x txt
 
 -- first checks if the edit has ano changes, and if so ignores it all together
 -- if the list of changes is nonempty then use the Target from the edit to only doChanges to the correct part of the text
-doEdit :: Bool -> Edit -> T.Text -> T.Text
-doEdit _ (_, []) txt = txt -- no changes means no edit to do
+doEdit :: Edit -> T.Text -> T.Text
+doEdit (_, []) txt = txt -- no changes means no edit to do
 -- do changes just to the whole body of text
-doEdit wflag (Whole, chgs) txt =
-  doChanges wflag chgs txt
+doEdit (Whole, chgs) txt =
+  doChanges chgs txt
 -- do changes to each individual line of text
-doEdit wflag (Each, chgs) txt =
-  T.unlines ( map (doChanges wflag chgs) (T.lines txt))
+doEdit (Each, chgs) txt =
+  T.unlines ( map (doChanges chgs) (T.lines txt))
 -- only do changes to the numbered lines given to Only
-doEdit wflag (Only ns, chgs) txt =
-  T.unlines $ map snd(mapIf (\(x,y)-> (x,(doChanges wflag chgs y))) (\(x,_)-> x `elem` ns) (zip [1..] (T.lines txt)))
+doEdit (Only ns, chgs) txt =
+  T.unlines $ map snd(mapIf (\(x,y)-> (x,(doChanges chgs y))) (\(x,_)-> x `elem` ns) (zip [1..] (T.lines txt)))
 
 -- unconcerned with target, only has a list of Changes to do and a Text to do them to
-doChanges :: Bool -> [Change] -> T.Text -> T.Text
-doChanges wflag chg txt = -- applying change to whole blob of text
+doChanges :: [Change] -> T.Text -> T.Text
+doChanges chg txt = -- applying change to whole blob of text
   case chg of
     [] -> txt -- no more changes to do return final text
     (Ins tx n):chgs ->
       if n >= 0 then -- counting forward
-        doChanges wflag chgs ((T.take n txt) <> tx <> (T.drop n txt))
+        doChanges chgs ((T.take n txt) <> tx <> (T.drop n txt))
       else -- counting backward
-        doChanges wflag chgs ((T.dropEnd ((abs n)-1) txt) <> tx <> (T.takeEnd ((abs n)-1) txt))
+        doChanges chgs ((T.dropEnd ((abs n)-1) txt) <> tx <> (T.takeEnd ((abs n)-1) txt))
     (Rem a b):chgs ->
       if b==0 then
-        doChanges wflag chgs txt -- delete nothing
-      else if a >= 0 then -- counting foward for skipped letters
-        if b > 0 then -- deleting foward
-          doChanges wflag chgs ((T.take a txt) <> (T.drop (a+b) txt))
-        else -- deleting back
-          doChanges wflag chgs ((T.dropEnd (abs b) (T.take a txt)) <> T.drop a txt)
-      else -- counting back for skipped letters
-        if b > 0 then -- deleting foward
-          doChanges wflag chgs ((T.dropEnd (abs a) txt) <> (T.drop b (T.takeEnd (abs a) txt)))
-        else -- deleting back
-          (T.dropEnd ((abs a)+(abs b)) txt <> (T.takeEnd (abs a) txt))
+          doChanges chgs txt -- delete nothing
+      else
+        if a >= 0 then -- counting foward for skipped letters
+          if b > 0 then -- deleting foward
+            doChanges chgs ((T.take a txt) <> (T.drop (a+b) txt))
+          else -- deleting back
+            doChanges chgs ((T.dropEnd (abs b) (T.take a txt)) <> T.drop a txt)
+        else -- counting back for skipped letters
+          if b > 0 then -- deleting foward
+            doChanges chgs ((T.dropEnd (abs a) txt) <> (T.drop b (T.takeEnd (abs a) txt)))
+          else -- deleting back
+            (T.dropEnd ((abs a)+(abs b)) txt <> (T.takeEnd (abs a) txt))
     (Fr find repl):chgs ->
-      doChanges wflag chgs (T.replace find repl txt)
+      doChanges chgs (T.replace find repl txt)
 
 
 

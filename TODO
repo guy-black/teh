@@ -1,7 +1,7 @@
 
 - test to make sure everything works as it should
-- implement a -n flag to ignore trailing newline
-- implement a -w flag to wrap around on rem
+- scrap all remnants of the -w implementation
+
 - write a better description for readme
 - write a pretty print macros function
 
@@ -13,5 +13,28 @@
   it could be moved back to avoid confusion, but then what if the edits need to be a particular order?
   So I should add a -f flag to indicate a file to be read from
 
+# thought on the trouble of adding a wrap around
 
-  ^^^ similarly to this --nostdin should make the argument directly after the target text, should also probably rename that idk I'm tired
+so if we have teh -t foobar 'Whole Rem 3 5'
+- without -w the standard behavior is clear, skip the first three chars, foo, and delete the last three, bar and
+  stop there since nothign is left leaving only foo
+- and with -w it's still clear we should skip foo and delete the last three bar, then for the last two wrap around and
+  delete the first two characters fo leaving only o
+but what if we have teh -t foobar Rem 8 5
+- the 8 chars to skip exceeds foobar length by two, should the offset also loop around thust starting between fo and obar?
+  or should it be a no op for starting outside the bounds of the word?
+
+  if the off set is placed between fo and obar should all of obar be removed and then loop around to remove the f too leaving only o?
+
+
+  at that point what is the practical point of -w?  it feels like creating unpredictable behavior just for the sake of adding a
+  new feature to this genreal text modifying algorithm.  I can't personally see a reason why I'd prefer
+    teh -w -t foobar 'Whole Rem 4 3' over teh -t foobar 'Whole Rem 0 1 Rem 4 2'
+  I suppose for determined -t value the -w allows me to remove a change from the list and still be pretty sure of what's expected
+  but in general the command without -w feels more explicit and unambiguous about the intended outcome for most noncontrived
+  situations.
+
+  If anyone says they think the -w flag would be helpful and would like to define clear rules for how it should behave then
+  I will implement it.  Hell I'd be over the moon if anyone else even finds any use in this little tool at all.  For now
+  I don't think I can gain any use for a -w flag so I'm scrapping that whole idea for now pending the existence of other people
+  using this tool and wanting such a feature
