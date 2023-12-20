@@ -38,10 +38,10 @@ main = do
     else do  -- we can squish our parsed marcros into one big Macros and toss forget errors or which file they came from
       let finalMacs = mconcat $ reverse $ map snd parsedMacsAndErrs
       -- mconcat will favor values to the left, but I want to favor values to the right, so reverse it first
-      let nwflags = (any (`elem`maclessargs) ["-n", "-N"],any (`elem`maclessargs) ["-w", "-W"]) -- (Bool, Bool) for -n and -w flags
-      let argsSansNW = maclessargs `remAll` ["-n", "-N", "-w", "-W"] -- arg list without -n and -w flags
-      let (tfargs, argsSansTF) = extArgs (\x-> any (x==) ["-t", "-T", "-f", "-F"]) argsSansNW
-      let editsOnly = filter (/= "-stdin") argsSansTF -- no -n -w -t -f -ie or -stdin flags left, should only be edits now
+      let nflag = any (`elem`maclessargs) ["-n", "-N"] -- Bool for -n flag
+      let argsSansN = maclessargs `remAll` ["-n", "-N"] -- arg list without -n and -w flags
+      let (tfargs, argsSansTF) = extArgs (\x-> any (x==) ["-t", "-T", "-f", "-F"]) argsSansN
+      let editsOnly = filter (/= "-stdin") argsSansTF -- no -n -t -f -ie or -stdin flags left, should only be edits now
       let (edErrs, pEdits) = parseEdits finalMacs editsOnly ([],[])
       if not $ null tfargs then do -- some t and/or f flags were found
         let readStdIn = "--stdin" `elem` argsSansTF

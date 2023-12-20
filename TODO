@@ -1,6 +1,5 @@
 
 - test to make sure everything works as it should
-- scrap all remnants of the -w implementation
 
 - write a better description for readme
 - write a pretty print macros function
