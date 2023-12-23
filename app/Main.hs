@@ -53,12 +53,12 @@ main = do
           if readStdIn then -- we are editing tfVals and stdIn
             return ()
           else -- we are only editing tfVals
-            return ()
+            putTxt $ T.unlines $ map (teh nflag pEdits) tfVals
       else -- no t or f flags, only editing text from stdin
         if (not ignoreErrors) && (not $ null edErrs) then -- if there are errors and we aren't ignoring them
           putStdErr $ "errors on parsing edits\n" <>  (T.unlines edErrs)
-        else do
-        return ()
+        else
+          getLine >>= evaluate >>= (return . T.pack) >>= (\x -> putTxt $ teh nflag pEdits x)
 
 {--
   conmac@(conerr, conmacs) <- seekMacs confDir -- Tuple of T.Text and Map T.Text [Change] if it was read with no problem string will
