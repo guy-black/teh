@@ -4,6 +4,9 @@
 - write a better description for readme
 - write a pretty print macros function
 
+- work out how to implement a stram editing mode
+  - if you have a command that regularly prints data to stdout (eg vmstat 1 or exoutput) and pipe it into teh
+    teh should apply edits to every thing it prints to stdout in real time then print it to std out
 
 # misc notes on necessity of -f flag
 - but then what if the last and only argument is both a readable filename and a macro?

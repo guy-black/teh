@@ -14,6 +14,7 @@ import qualified Data.Text as T
 import GHC.IO.StdHandles (stderr)
 import GHC.IO.Handle (hPutStr)
 import Control.Exception (try, SomeException, evaluate)
+import Control.Monad (forever)
 
 
 main :: IO ()
@@ -41,7 +42,7 @@ main = do
       let nflag = any (`elem`maclessargs) ["-n", "-N"] -- Bool for -n flag
       let argsSansN = maclessargs `remAll` ["-n", "-N"] -- arg list without -n and -w flags
       let (tfargs, argsSansTF) = extArgs (\x-> any (x==) ["-t", "-T", "-f", "-F"]) argsSansN
-      let editsOnly = filter (/= "-stdin") argsSansTF -- no -n -t -f -ie or -stdin flags left, should only be edits now
+      let editsOnly = filter (/= "--stdin") argsSansTF -- no -n -t -f -ie or -stdin flags left, should only be edits now
       let (edErrs, pEdits) = parseEdits finalMacs editsOnly ([],[])
       if not $ null tfargs then do -- some t and/or f flags were found
         let readStdIn = "--stdin" `elem` argsSansTF
@@ -50,15 +51,22 @@ main = do
           putStdErr $ "errors on parsing -t and -f flags \n" <>  (T.unlines tfErrs)
                          <> "\nerrors on parsing edits\n" <> (T.unlines edErrs)
         else -- there are no errors, or we're just ignoring them
-          if readStdIn then -- we are editing tfVals and stdIn
-            return ()
+          if readStdIn then do -- we are editing tfVals and stdIn
+            putTxt $ T.unlines $ map (teh nflag pEdits) tfVals
+            getContents >>= (return . T.pack) >>= (\x -> putTxt $ teh nflag pEdits x)
           else -- we are only editing tfVals
             putTxt $ T.unlines $ map (teh nflag pEdits) tfVals
       else -- no t or f flags, only editing text from stdin
         if (not ignoreErrors) && (not $ null edErrs) then -- if there are errors and we aren't ignoring them
           putStdErr $ "errors on parsing edits\n" <>  (T.unlines edErrs)
         else
-          getLine >>= evaluate >>= (return . T.pack) >>= (\x -> putTxt $ teh nflag pEdits x)
+          getContents >>= (return . T.pack) >>= (\x -> putTxt $ teh nflag pEdits x)
+
+
+          -- forever $ getLine >>= (return . T.pack) >>= (\x -> putTxt $ teh nflag pEdits x)
+          -- this /kinda/ works for editing stream from std in if you only want to work with each line, and ony inser
+          -- and delete relative to the beginning of the line
+          -- overall not good enough
 
 {--
   conmac@(conerr, conmacs) <- seekMacs confDir -- Tuple of T.Text and Map T.Text [Change] if it was read with no problem string will

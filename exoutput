@@ -1,0 +1,6 @@
+#!/bin/bash
+
+while true; do
+  printf "this is a \n test text of \n multiple lines\n\n"
+  sleep 1
+done
