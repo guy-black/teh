@@ -389,22 +389,29 @@ type Macros = M.Map T.Text Edit
 wordsandquo :: T.Text -> [T.Text]
 wordsandquo t =
   let (pre, rst) = break (\x->T.take 1 x == "\"") $ T.words t in
-    if rst == [] then -- there are no words that start with a quote, T.words will work fine
-      T.words t
+    -- (all the words before the first word to start with a ", the first word to start with a " and all of the rest of the words)
+    if rst == [] then -- there are no words that start with a quote, T.words worked fine
+      pre
     else -- there are quotes
       case takeUntil (\x->T.takeEnd 1 x == "\"" && T.takeEnd 2 x /= "\\\"") rst of -- take words up to the first one to end with a non escaped "
-        ([], _) ->  -- there was no closing quote, just treat as regular words
-          T.words t
-        (quo, aftquo) -> pre <> [(T.unwords quo)] <> (wordsandquo $ T.unwords aftquo)
+        (_, []) -> -- either there was no closing quote, all of rst is a quote, or rst is literally just "
+          if rst == ["\""] then -- rst is just a single ", there is no quote to group together, T.words would've worked
+            pre <> rst
+          else if ((T.takeEnd 1 $ T.unwords rst) == "\"") then -- rst starts and ends with a " and isn't just a single "
+            pre <+> (T.drop 1 $ T.dropEnd 1 $ T.unwords rst) -- unwords rst, strip quotes, and append to end of rst
+          else -- there was no closing quote, no quote to group toghether, T.words would've worked
+            pre <> rst
+        (quo, aftquo) -> -- found a closing quote making all of quo one quote, unwords quo, strip " and recurse on remainder
+          (pre <+> (T.drop 1 $ T.dropEnd 1 $ T.unwords quo)) <> (wordsandquo $ T.unwords aftquo)
 
 -- if no value within ls is True for b then
---   takeUntil b ls == ([], ls)
+--   takeUntil b ls behaves is literally just break b ls
 -- if some value a within ls is True for b then for the first a
 --   takeuntil b ls == (prea<+>a,posta)
 takeUntil ::  (a -> Bool) -> [a] -> ([a],[a])
 takeUntil b ls =
   case break b ls of
-    (_, []) -> ([], ls)
+    (_, []) -> (ls, [])
     (pre, (r:st)) -> (pre<+>r,st)
 
 -- split a list into the values after a value that returns true and the rest of the list with the true values and their successor

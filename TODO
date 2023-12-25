@@ -1,12 +1,45 @@
 
 - test to make sure everything works as it should
+-- wordsandquo has a bug when parsing a quote of just space
+  example raw text: whole fr " " -
+-- should become the following [Text]
+  ["whole", "fr", " ", "-"]
+-- but instead becomes
+  ["whole","fr","","","-"]
+-- this is because wordsandquo starts with applying T.words to the input text, and then looks through that text for a
+   word starting with a quote and looks ahead in the list for a word closing with a quote, and combines those words and
+   their contents
+-- however T.word throws away spaces thus T.words applied to the raw text above evaluates to
+  ["whole", "fr", "\"", "\"", "-"]
+-- solution is to rewrite wordsandquo without using T.words
+  rough puedocode sketh would be
+
+wordsandquo :: T.Text -> [T.Text] -> [T.Text]
+wordsandquo "" acc = acc -- base case and allow us to assume that txt is nonempty to safely call T.head
+wordsandquo txt acc =
+  if T.head txt == ' ' then -- white space we can safely throw way
+    wordsandquo (T.drop 1 txt) acc
+  else if T.head txt == '"' then -- we're entering a quote
+    let quo = takeUntil (=='"') T.unpack $ T.drop 1 txt in
+     -- to take characters until you find a closing quote and then have the whole quote, whitespace and all
+     -- but also add conditions to ensure the quote I match isn't escaped
+     -- and to preserve current logic it should also make sure the quote is followed by whitespace but maybe I should
+       -- drop that requirement.  dropping that would allow not adding a space in between the find and replace if both have to be
+       -- quoted anyway and I think shouldn't break any thing else not sure
+       -- so I could do echo "hoy hog" | teh -n 'each fr "y h""t d"' and save a keystroke if I want
+       -- more importantly it would make this logic easier to implment
+     wordsandquo rst (acc <+> (T.pack $ '"':quo))
+   else -- entering a plain nonquote word
+     -- ehh you get the idea, or atleat I hope I will when I get a chance to work more on this
+
 
 - write a better description for readme
 - write a pretty print macros function
 
-- work out how to implement a stram editing mode
+- work out how to implement a stream editing mode
   - if you have a command that regularly prints data to stdout (eg vmstat 1 or exoutput) and pipe it into teh
     teh should apply edits to every thing it prints to stdout in real time then print it to std out
+  - maybe could be done using hClose and Control.Concurrent.threadDelay, idk need to learn more how concurrent haskell works
 
 # misc notes on necessity of -f flag
 - but then what if the last and only argument is both a readable filename and a macro?
