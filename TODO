@@ -12,7 +12,7 @@
 -- however T.word throws away spaces thus T.words applied to the raw text above evaluates to
   ["whole", "fr", "\"", "\"", "-"]
 -- solution is to rewrite wordsandquo without using T.words
-  rough puedocode sketh would be
+  rough puedocode sketch would be
 
 wordsandquo :: T.Text -> [T.Text] -> [T.Text]
 wordsandquo "" acc = acc -- base case and allow us to assume that txt is nonempty to safely call T.head
@@ -31,6 +31,33 @@ wordsandquo txt acc =
      wordsandquo rst (acc <+> (T.pack $ '"':quo))
    else -- entering a plain nonquote word
      -- ehh you get the idea, or atleat I hope I will when I get a chance to work more on this
+
+-- less sleepy idea
+  take text to use as a string and track a word accumulator and a words accumulator
+  if text is empty and word accumulator are empty then return words accumulator
+  if text is empty and word accumulator is not empty return words accumulator <+> word accumulator
+  -- we know text isn't empty
+  if head of text is a space then recurse with text tail and if wordacc isn't empty wordsacc<+>wordacc
+  -- we know text doesn't start with a space
+  if text is 1 char, return wordsacc <+> (wordacc <+> char)
+  -- we know text is atleast 2 chars
+  if head is a '\' then throw it away, add second char to wordacc, and recurse without thefirst two chars
+  if head is a '"' then
+    let (quo,rst) = finishquo $ drop 1 txt
+    recurse with wordsacc<+>wordacc<+>quo and rst
+  -- we know the first character isn't a quote or an escaped char
+  recuse with word
+
+  finishquo take text to find quo and word acc
+  if text is empty return (wordacc, "")
+  -- we know text is not empty
+  if text is one char, append it to wordacc and recurse with head
+  -- we know text is atleast 2 chars
+  if first char is '\' then append second char to wordacc and recurse with drop 2 text
+  -- we know first char is not escaped
+  if first char is '"' then return (wordacc, drop 1 text)
+  -- we know the first char isn't a closing quote
+  else recurse with wordacc<+>head drop 1 text
 
 
 - write a better description for readme

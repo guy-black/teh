@@ -386,6 +386,7 @@ type Macros = M.Map T.Text Edit
 -- TODO: ignore closing escaped quote mark ending a quote
 -- ALSO: let's just strip the quotes here to make it easy on parseChgs'
 -- and then we get non quoted single word text arguments for free
+{--
 wordsandquo :: T.Text -> [T.Text]
 wordsandquo t =
   let (pre, rst) = break (\x->T.take 1 x == "\"") $ T.words t in
@@ -403,6 +404,89 @@ wordsandquo t =
             pre <> rst
         (quo, aftquo) -> -- found a closing quote making all of quo one quote, unwords quo, strip " and recurse on remainder
           (pre <+> (T.drop 1 $ T.dropEnd 1 $ T.unwords quo)) <> (wordsandquo $ T.unwords aftquo)
+--}
+
+wordsandquo :: T.Text -> [T.Text]
+wordsandquo t = map T.pack $ waq [] [] $ T.unpack t
+-- convert text to list of char, and feed it to real function with empty accumulator lists
+-- then convert the results back into T.Texts
+
+-- wordsandquo' wAcc wsAcc txt
+-- wAcc is the word accumulator
+-- wsAcc is words accumulator
+-- txt is the text that needs to be split
+waq :: String -> [String] -> String -> [String]
+waq wAcc wsAcc txt=
+  case txt of
+    [] -> -- if there's no text left to split -- all base cases
+      if null wAcc then -- if the wAcc is empty don't append it to wsAcc
+        wsAcc -- just resolve to wsAcc
+      else -- wAcc is not empty
+        wsAcc<+>wAcc -- resolve wsAcc with wAcc tacked on the end
+    c:[] -> -- if txt only has one character left -- all base cases
+      if c == ' ' then -- sike it was no character just a space
+        if null wAcc then
+          wsAcc
+        else
+          wsAcc<+>wAcc -- same logic as when txt is empty
+      else -- txt only has one char left and it's not just a space, append that char to wAcc and append that to wsAcc and return
+        wsAcc<+>(wAcc<+>c)
+    h:hh:t -> -- txt is atleast two characters long, no more base cases, now for the messy logic
+      if h == ' ' then -- h is a space, toss it and append wAcc to wsAcc if it's not empty and recurse
+        if null wAcc then -- no wAcc to append to wsAcc
+          waq wAcc wsAcc (hh:t)
+        else -- there is a wAcc to append
+          waq "" (wsAcc<+>wAcc) (hh:t)
+      else if h == '\\' then -- hh is supposed to be escaped --
+        waq (wAcc<+>hh) wsAcc t -- append hh to wAcc, leave wsAcc alone, and recurse with t
+      else if h == '"' then -- a quote is starting, let's try to get it
+        case finishQuo "" (hh:t) of
+          Nothing -> -- no closing quote found in the rest of the txt almost a base case, see comment below for why not
+            waq (wAcc<+>h) wsAcc (hh:t)
+          Just (quo, rst) -> -- got the rest of the quote! recurse with wAcc (unless it's empty) and quo appended to wsAcc
+            if null wAcc then
+              waq wAcc (wsAcc<+>quo) rst
+            else
+              waq "" (wsAcc<+>wAcc<+>quo) rst
+      else -- h is just a regular old char, append it to wAcc and recurse
+        waq (wAcc<+>h) wsAcc (hh:t)
+
+{--
+ On why Nothing from finishQuo isn't a base case after all
+ I also accidentally introduced the ability to escape a space which I kinda like and would break by
+ making this a base case, so instead I will treat the '"' in h as if it were escaped
+--}
+
+-- takes an accumulator string, and the string to find the closing quote in
+-- and returns either Just (quo, rst) or if no closing quote can be found, nothing
+finishQuo :: String -> String -> Maybe (String, String)
+finishQuo _ "" = Nothing -- got to the end of the string with no closing quote found, return nothign -- base case
+finishQuo wAcc ('"':txt) = Just (wAcc, txt) -- we found the end of the quote! -- base case
+finishQuo wAcc ('\\':c:txt) = -- there are atleast two chars left but the first is an escape character
+  finishQuo (wAcc<+>c) txt -- throw away the \, tack the next char onto wAcc and recurse
+finishQuo wAcc (c:txt) = -- we found another character, but it's not the closing quote
+  finishQuo (wAcc<+>c) txt -- tack it on to the wAcc and recurse
+
+
+{-- nvm this looks ugly
+wordsandquo' "" wsAcc "" = wsAcc -- no more text to split, no wAcc to append to it, just return wsAcc
+wordsandquo' wAcc wsAcc "" = wsAcc <+> wAcc -- no more text to split, return wsAcc <+> wAcc
+-- we know txt is not empty
+wordsandquo' "" wsAcc (' ':txts) = -- wAcc is empty, and head txt is ' ', recurse with tail of txt
+  wordsandquo' "" wsAcc txts
+wordsandquo' wAcc wsAcc (' ':txts) = -- head txt is ' ', append wAcc to wsAcc and recurse with empty wAcc and tail txt
+  wordsandquo' "" (wsAcc<+>wAcc) txts
+-- we know txt is not empty and doesn't start with a space
+wordsandquo' wAcc wsAcc (h:[]) = -- txt only has one char left, append to wAcc and return new wAcc appended to wsAcc
+  wsAcc <+> (wAcc <+> h)
+-- we know txt has at least two chars and doesn't start with a space
+wordsandquo' wAcc wsAcc (h:hh:t) =
+  if h == '\' then -- first char is escaping second char
+    wordsandquo' (wAcc<+>hh) wsAcc t -- drop first char, add second char to wAcc, recurse with tail
+  else if h == '"' then -- first char is starting a quote
+    let (quo, rst) = finishquo "" (hh:t) in
+      wordsandquo' ""
+--}
 
 -- if no value within ls is True for b then
 --   takeUntil b ls behaves is literally just break b ls
