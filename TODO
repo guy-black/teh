@@ -1,11 +1,5 @@
 
 - test to make sure everything works as it should
-  - new wordsandquo breaks parsing \n in
-    as soon as it reads a \ it throws it away and passes the next char in literally
-    works great for my needs of finding an unescaped " while ignoring escaped ones,
-    but breaks \n, \t, or any other special \whatever characters users may want
-    to fix change the logic upon finding a \ to first check if the char after is a
-    special escape code char and if so toss it in as it should be
 
 - write a better description for readme
 - write a better pretty print macros function

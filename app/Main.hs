@@ -355,7 +355,6 @@ doEdit (Each, chgs) txt =
 -- only do changes to the numbered lines given to Only
 doEdit (Only ns, chgs) txt =
   T.unlines $ map snd(mapIf (\(x,y)-> (x,(doChanges chgs y))) (\(x,_)-> x `elem` ns) (zip [1..] (T.lines txt)))
-  -- FuNcTiOnAl PrOgRaMmInG iS eLeGaNt
 
 -- unconcerned with target, only has a list of Changes to do and a Text to do them to
 doChanges :: [Change] -> T.Text -> T.Text
@@ -420,8 +419,21 @@ waq wAcc wsAcc txt=
           waq wAcc wsAcc (hh:t)
         else -- there is a wAcc to append
           waq "" (wsAcc<+>wAcc) (hh:t)
-      else if h == '\\' then -- hh is supposed to be escaped --
-        waq (wAcc<+>hh) wsAcc t -- append hh to wAcc, leave wsAcc alone, and recurse with t
+      else if h == '\\' then -- hh is supposed to be escaped -- this broke other escape codes
+        if (hh::Char) `elem` ("btnvr"::[Char]) then -- check if hh is an actual escape code
+           if hh == 'b' then -- surely there has to be a better way to do this that covers all ofthe escape codes
+             waq (wAcc<+>'\b') wsAcc t -- this
+           else if hh == 't' then --      feels
+             waq (wAcc<+>'\t') wsAcc t -- like
+           else if hh == 'n' then --      the
+             waq (wAcc<+>'\n') wsAcc t -- wrong
+           else if hh == 'v' then --      way
+             waq (wAcc<+>'\v') wsAcc t -- to
+           else if hh == 'r' then --      do
+             waq (wAcc<+>'\r') wsAcc t -- this
+           else undefined -- we can only go down this branch if hh is in "btnvr" so it has to be
+                          -- either a b, t, n v, or r.  I feel fine leaving this as undefined
+        else waq (wAcc<+>hh) wsAcc t -- append hh to wAcc, leave wsAcc alone, and recurse with t
       else if h == '"' then -- a quote is starting, let's try to get it
         case finishQuo "" (hh:t) of
           Nothing -> -- no closing quote found in the rest of the txt almost a base case, see comment below for why not
@@ -450,7 +462,20 @@ finishQuo :: String -> String -> Maybe (String, String)
 finishQuo _ "" = Nothing -- got to the end of the string with no closing quote found, return nothign -- base case
 finishQuo wAcc ('"':txt) = Just (wAcc, txt) -- we found the end of the quote! -- base case
 finishQuo wAcc ('\\':c:txt) = -- there are atleast two chars left but the first is an escape character
-  finishQuo (wAcc<+>c) txt -- throw away the \, tack the next char onto wAcc and recurse
+  if (c::Char) `elem` ("btnvr"::[Char]) then -- check if hh is an actual escape code
+    if c == 'b' then --              this
+      finishQuo (wAcc<+>'\b') txt -- may
+    else if c == 't' then --         or
+      finishQuo (wAcc<+>'\t') txt -- may
+    else if c == 'n' then --         not
+      finishQuo (wAcc<+>'\n') txt -- be
+    else if c == 'v' then --         a
+      finishQuo (wAcc<+>'\v') txt -- cry
+    else if c == 'r' then --         for
+      finishQuo (wAcc<+>'\r') txt -- help
+    else undefined -- we can only go down this branch if hh is in "btnvr" so it has to be
+                          -- either a b, t, n v, or r.  I feel fine leaving this as undefined
+  else finishQuo (wAcc<+>c) txt -- throw away the \, tack the next char onto wAcc and recurse
 finishQuo wAcc (c:txt) = -- we found another character, but it's not the closing quote
   finishQuo (wAcc<+>c) txt -- tack it on to the wAcc and recurse
 
