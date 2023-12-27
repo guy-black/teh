@@ -7,15 +7,16 @@ import System.Directory (doesFileExist, XdgDirectory(XdgConfig), getXdgDirectory
 import Text.Read (readMaybe)
 import qualified Data.Map.Strict as M    -- for M.Map
 import Data.Map.Strict ((!?))
-import Data.List (isSuffixOf, sortOn, (\\), nub)
+import Data.List (nub)
 import Data.Either (partitionEithers)
 import Data.Char (isSpace, isDigit)
+import Data.Maybe (catMaybes)
 import qualified Data.Text as T
 import GHC.IO.StdHandles (stderr)
 import GHC.IO.Handle (hPutStr)
 import Control.Exception (try, SomeException, evaluate)
-import Control.Monad (forever)
-
+-- import Control.Monad (forever)
+-- will uncomment again when I implement stream editing if I still need it then
 
 main :: IO ()
 main = do
@@ -34,8 +35,9 @@ main = do
     let macstoignore = map snd macstoignore'-- add these lines to just have the argument
     let finalmaclist = (dedupe $ confDir:".teh":cflagmacs) `remAll` macstoignore -- final list of files to look for macros
     parsedMacsAndErrs <- mapM seekMacs finalmaclist -- convert our files to look for macros into a [(errors::T.Text, Macros)]
+    let labeledMacsAndErrs = zip finalmaclist parsedMacsAndErrs -- to make it easier for pringMacros to get the file name and path
     if "--show-macros" `elem` maclessargs then -- we don't actually need to edit text, just parse macros and print details
-      putTxt $ printMacros parsedMacsAndErrs -- TODO actually make printMacros do something useful
+      putTxt $ printMacros labeledMacsAndErrs -- TODO actually make printMacros do something useful
     else do  -- we can squish our parsed marcros into one big Macros and toss forget errors or which file they came from
       let finalMacs = mconcat $ reverse $ map snd parsedMacsAndErrs
       -- mconcat will favor values to the left, but I want to favor values to the right, so reverse it first
@@ -68,23 +70,83 @@ main = do
           -- and delete relative to the beginning of the line
           -- overall not good enough
 
-{--
-  conmac@(conerr, conmacs) <- seekMacs confDir -- Tuple of T.Text and Map T.Text [Change] if it was read with no problem string will
-  locmac@(locerr, locmacs) <- seekMacs ".teh" -- be empty, if no file or parse error string will say that with empty map
-  let (macErrors, combMacs) = combineMacros conmac locmac
-  proceed <- howToProceed combMacs args -- determine whether to end early or not, and whether to read from stdin
-  case proceed of
-    Stop Help -> putTxt help
-    Stop Macs -> putTxt $ printMacros (macErrors, combMacs)
-    Stop Penguin -> putTxt pod
-    Stop (ArgParseErr err) -> putStdErr err
-    WithStdIn edits -> do
-      stdin <- getContents >>= (return . T.pack)
-      putTxt $ teh edits stdin
-    WoStdIn (edits, txt) ->
-      putTxt $ teh edits txt
---}
 
+-- -----------*
+--  datatypes
+-- -----------*
+
+type Edit  = (Target, [Change])
+
+data Change = Fr T.Text T.Text
+            | Ins T.Text Int
+            | Rem Int Int
+  deriving (Read, Show)
+
+data Target = Whole
+            | Each
+            | Only [Int]
+  deriving (Read, Show)
+
+type Macros = M.Map T.Text Edit
+
+-- -------------------------------*
+--  functions to work with Macros
+-- -------------------------------*
+
+-- takes a filepath to look for macros, tries to read them, and tries to have them parsed
+-- returns a Text value stating any errors that occured in parsing, and a Macros value
+seekMacs :: T.Text ->  IO (T.Text, Macros)
+seekMacs f = do
+  exist <- doesFileExist $ T.unpack f
+  if exist then do
+    file <- (try $ (readFile $ T.unpack f) >>= (return . T.pack) >>= evaluate) :: IO (Either SomeException T.Text)
+    case file of
+      Left _ -> return (f <> " could not be read", M.empty)
+      Right file' ->
+        let (err, m) = parseMacs file' in
+          if err=="" then
+            return (f<> "parsed with no errors", m)
+          else
+            return ("errors for "<>f<>":\n"<>err, m)
+  else
+    return (f <> " not found", M.empty)
+
+-- takes the raw text of a file and generates a Text value listing any parsing errors, and a Macros of what could be parsed
+parseMacs :: T.Text -> (T.Text, Macros)
+parseMacs txt =
+  (\(xs, ms)->(T.unlines xs, M.fromList ms)) $ -- convert list of errors to one big error, and list of (Text, Edit) to Macros
+  partitionEithers $ -- convert list of Either error (Text, Edit) to (list of errors, list of (Text, Edit))
+  catMaybes $ -- remove the nothings that represent commented and blank lines
+  map parseMac $ -- convert each line into either an error, or a (Text, Edit)
+  zip [1..] $ -- number each line
+  T.lines txt -- break into list of lines of text
+
+-- takes a single line from a macros file and produces either a Text value descri
+parseMac :: (Int, T.Text) -> Maybe (Either T.Text (T.Text, Edit))
+parseMac (i, txt) =
+  if T.null txt || (T.head txt /= '"') then -- T.null on the left to avoid running T.head on txt if it's empty
+    Nothing -- This line is either blank, or doesn't start with a quote so treat it as a comment
+  else -- this line isn't empty and starts with a "
+    case (finishQuo "" $ T.unpack $ T.drop 1 txt) of
+      Nothing -> -- couldn't find a closing quote to get the name of the macro, retrn error
+        Just (Left $ "could not parse "<>txt<>" on line "<>showT i<>".  No closing quote found for the macro's name.")
+      Just (n, e) -> -- got the macro name!
+        let (name, rawEd) = (T.pack n, T.pack e) in
+          case parseEdit M.empty $ T.stripStart rawEd of -- try to parse this Edit with an empty Macro and remove leading whitespace
+            Left err -> -- edit failed to parse
+              Just (Left $ "Could not parse "<>txt<>" on line "<>showT i<>". Edit parse failed with the following error: " <> err)
+            Right ed -> -- edit parsed successfully
+              Just (Right (name, ed))
+
+-- converts the list of all macros teh can see and prints them in a neat and orderly fashion
+printMacros :: [(T.Text, (T.Text, Macros))] -> T.Text
+printMacros _ = "I'll do it this afternooooon"
+
+-- -----------------*
+-- argument parsing
+-- -----------------*
+
+-- parses all -t and -f flags
 -- take an accumulator, list of (flag, argument), and returns accumulator
 -- should only have to call once so won't bother with ergonomic wrapper
 whatTF :: ([T.Text], [T.Text]) -> [(T.Text, T.Text)] -> IO ([T.Text], [T.Text])
@@ -109,154 +171,11 @@ whatTF acc@(eacc, tacc) tf =
                           \idk.  If you're me then fix this, if you're not me then please file an issue at \
                           \github.com/guy-black/teh please and thanks :)"), tacc) t
 
+-- --------------------------*
+-- parsing edits and changes
+-- --------------------------*
 
-seekMacs :: T.Text ->  IO (T.Text, Macros)
-seekMacs f = do
-  exist <- doesFileExist $ T.unpack f
-  if exist then do
-    file <- (try $ (readFile $ T.unpack f) >>= (return . T.pack) >>= evaluate) :: IO (Either SomeException T.Text)
-    case file of
-      Left _ -> return (f <> " could not be read", M.empty)
-      Right file' ->
-        let (err, m) = parseMacs file' in
-          if err=="" then
-            return (f<> "parsed with no errors", m)
-          else
-            return ("errors for "<>f<>"\n"<>err, m)
-  else
-    return (f <> " not found", M.empty)
-
-parseMacs :: T.Text -> (T.Text, Macros)
-parseMacs txt =
-  (\(xs, ms)->(T.unlines xs, M.fromList ms)) $ -- convert list of errors to one big error, and list of (Text, Edit) to Macros
-  partitionEithers $ -- convert list of Either error (Text, Edit) to (list of errors, list of (Text, Edit))
-  map parseMac $ -- convert each line into either an error, or a (Text, Edit)
-  zip [1..] $ -- number each line
-  map (\x->"("<>x<>")") $ -- wrap each line in parenthesis
-  filter (\x->T.take 1 x /= "#") $ -- remove comments from .teh
-  T.lines txt -- break into list of lines of text
-
-parseMac :: (Int, T.Text) -> Either T.Text (T.Text, Edit)
-parseMac (i, txt) =
-  case (readMaybeT $ "("<>txt<>")"  :: Maybe (T.Text, Target, [Change])) of
-    Just m ->
-      Right $ (\(tx,ta,ch)->(tx,(ta,ch))) m
-    Nothing ->
-      case (readMaybeT $ "("<>txt<>")"  :: Maybe (T.Text, Target, Change)) of
-        Just m ->
-          Right $ (\(tx,ta,ch)->(tx,(ta,[ch]))) m
-        Nothing -> Left $ "could not parse "<>txt<>" on line "<>showT i
-
-
--- this can probably be a fold
--- essentially a wrapper to call doEdit with each of the list of Edits
-teh :: Bool -> [Edit] -> T.Text -> T.Text
-teh _ [] txt = txt
-teh nflag (x:xs) txt =
-  -- not T.Null txt to the left of T.next will force the expression to resolve to false before erroring by calling T.last on ""
-  if nflag && (not $ T.null txt) && (T.last txt == '\n') then
-    -- on recurse set nflag to false as the trailing \n is already removed
-    (teh False xs $ doEdit x $ T.dropEnd 1 txt) <> "\n"
-  else -- either nflag is false or there is no trailing \n
-    -- set nflag false becasue either it is false and there's no difference, or there is no trailing \n
-    -- and setting it to false makes && resolve correctly to false witout needing to check last character
-    -- also avoids ignoring any trailing \n added by previously applied edit
-    teh False xs $ doEdit x txt
-
--- first checks if the edit has ano changes, and if so ignores it all together
--- if the list of changes is nonempty then use the Target from the edit to only doChanges to the correct part of the text
-doEdit :: Edit -> T.Text -> T.Text
-doEdit (_, []) txt = txt -- no changes means no edit to do
--- do changes just to the whole body of text
-doEdit (Whole, chgs) txt =
-  doChanges chgs txt
--- do changes to each individual line of text
-doEdit (Each, chgs) txt =
-  T.unlines ( map (doChanges chgs) (T.lines txt))
--- only do changes to the numbered lines given to Only
-doEdit (Only ns, chgs) txt =
-  T.unlines $ map snd(mapIf (\(x,y)-> (x,(doChanges chgs y))) (\(x,_)-> x `elem` ns) (zip [1..] (T.lines txt)))
-
--- unconcerned with target, only has a list of Changes to do and a Text to do them to
-doChanges :: [Change] -> T.Text -> T.Text
-doChanges chg txt = -- applying change to whole blob of text
-  case chg of
-    [] -> txt -- no more changes to do return final text
-    (Ins tx n):chgs ->
-      if n >= 0 then -- counting forward
-        doChanges chgs ((T.take n txt) <> tx <> (T.drop n txt))
-      else -- counting backward
-        doChanges chgs ((T.dropEnd ((abs n)-1) txt) <> tx <> (T.takeEnd ((abs n)-1) txt))
-    (Rem a b):chgs ->
-      if b==0 then
-          doChanges chgs txt -- delete nothing
-      else
-        if a >= 0 then -- counting foward for skipped letters
-          if b > 0 then -- deleting foward
-            doChanges chgs ((T.take a txt) <> (T.drop (a+b) txt))
-          else -- deleting back
-            doChanges chgs ((T.dropEnd (abs b) (T.take a txt)) <> T.drop a txt)
-        else -- counting back for skipped letters
-          if b > 0 then -- deleting foward
-            doChanges chgs ((T.dropEnd (abs a) txt) <> (T.drop b (T.takeEnd (abs a) txt)))
-          else -- deleting back
-            (T.dropEnd ((abs a)+(abs b)) txt <> (T.takeEnd (abs a) txt))
-    (Fr find repl):chgs ->
-      doChanges chgs (T.replace find repl txt)
-
-
-
-{-- all of this funcitonality should be moved into main I think I'll be fine removing it all together
-howToProceed :: Macros -> [T.Text] -> IO Proceed
-howToProceed mac sts =
-  case sts of
-        []     -> return $ Stop Help
-        (s:ts) ->
-          if "-h" `elem` sts || "--help" `elem` sts then
-            return $ Stop Help
-          else if "--show-macros" `elem` sts then
-            return $ Stop Macs
-          else if "--penguin" `elem` sts then
-            return $ Stop Penguin
-          else if "--nostdin" `elem` sts then -- --nostdin passed as an argument, the last argument passed will be treated as the target text
-            let (pre, post) = break ("--nostdin"==) sts
-                (eds, txt)  = ((pre<>(((drop 1) . (dropLast 1)) post)),(takeLast 1 post)) -- remove nostdin arg and don't read stdin for next arg
-            in
-              case parseargs mac eds of
-                Left err -> return $ Stop $ ArgParseErr err
-                Right edits -> return $ WoStdIn (edits, mconcat txt)
-          else do
-            isfile <- doesFileExist $ T.unpack (mconcat $ takeLast 1 ts)
-            if isfile then -- replace filename withe file contents and return list with False for no stdin
-              case parseargs mac $ dropLast 1 sts of
-                Left err -> return $ Stop $ ArgParseErr err
-                Right edits -> do
-                  file <- (readFile $ T.unpack (mconcat $ takeLast 1 ts)) >>= (return . T.pack)
-                  return $ WoStdIn (edits, file)
-            else
-              case parseargs mac sts of
-                Left err -> return $ Stop $ ArgParseErr err
-                Right edits -> return $ WithStdIn edits
-
---}
-
--- takes the config file then the local file
-combineMacros :: [Macros] -> Macros
-combineMacros = mconcat . reverse -- <> for Map favors left if both have same key and local overrides conf so local on left
-
-printMacros :: [(T.Text, Macros)] -> T.Text
-printMacros _ = "I'll do it this afternooooon"
-
--- parseargs :: Macros -> [T.Text] -> Either T.Text [Edit]
--- parseargs macs ts = parseargs' macs ts []
-
--- parseargs' :: Macros -> [T.Text] -> [Edit] -> Either T.Text [Edit]
--- parseargs' _ [] eds = Right $ reverse eds
--- parseargs' macs (t:ts) eds =
---   case parsearg macs t of
---     Left err -> Left err
---     Right ed -> parseargs' macs ts (ed:eds)
-
+-- parses all edits
 -- macros, list of edits to parse, acc errs,edits, final errs,edits
 parseEdits :: Macros -> [T.Text] -> ([T.Text], [Edit]) -> ([T.Text], [Edit])
 parseEdits _ [] acc = acc -- base case
@@ -265,6 +184,7 @@ parseEdits m (h:t) (eracc, edacc) =
     Left err -> parseEdits m t (eracc<+>err, edacc)
     Right ed -> parseEdits m t (eracc, edacc<+>ed)
 
+-- parses each edit giving either an error in Text or and Edit
 parseEdit :: Macros -> T.Text -> Either T.Text Edit
 -- to safely call head on the list from T.words on the Text value
 parseEdit _ "" = Left "Cannot parse empty argument.  Please check that you properly formatted your argumens"
@@ -304,17 +224,17 @@ parseEdit macs txt =
           Left $ txt <> " is not recognized as a saved macro, and does not start with a Target."
           -- at this point I know an empty argument would be passed out as an error
 
+-- wrapper function that calls the real Change parsing function
 parseChgs :: Macros -> T.Text -> Either T.Text [Change]
 -- handling an argument with no changes so parseChgs' doesn't have to
--- parseChgs' interprets and empty [Text] as the base case and returns the accumulator [Changes]
--- this prevents parseChgs' from producing and empty [Changes]
 parseChgs _ "" = Left "Argument only has a target, arguments must include either a macro, or a target followed by either\
                        \ a macro or changes.  Please check the formatting of your argmuents"
 parseChgs m t = parseChgs' m (wordsandquo t) []
 
+-- the real function that parses Changes
 parseChgs' :: Macros -> [T.Text] -> [Change] -> Either T.Text [Change]
-parseChgs' m [] acc = Right $ reverse acc
-parseChgs' m (t:ts) acc = -- undefined
+parseChgs' _ [] acc = Right $ reverse acc
+parseChgs' m (t:ts) acc =
   if any (t==) ["fr","FR","Fr"] then
     case ts of
       (a:b:cs) ->
@@ -349,69 +269,78 @@ parseChgs' m (t:ts) acc = -- undefined
   else
     Left $ "Error: " <> (T.unwords $ t:ts) <> " was expected to be a Change, but changes must start with Fr, Rem, or Ins.  Run with -h for more info"
 
+-- -----------------------*
+-- text editing functions
+-- -----------------------*
 
--- -----------*
---  datatypes
--- -----------*
+-- main entry point to the text editing functions
+-- removes and returns any trailng \n and applies doEdit on the text for each edit to do
+teh :: Bool -> [Edit] -> T.Text -> T.Text
+teh _ [] txt = txt
+teh nflag (x:xs) txt =
+  -- not T.Null txt to the left of T.next will force the expression to resolve to false before erroring by calling T.last on ""
+  if nflag && (not $ T.null txt) && (T.last txt == '\n') then
+    -- on recurse set nflag to false as the trailing \n is already removed
+    (teh False xs $ doEdit x $ T.dropEnd 1 txt) <> "\n"
+  else -- either nflag is false or there is no trailing \n
+    -- set nflag false becasue either it is false and there's no difference, or there is no trailing \n
+    -- and setting it to false makes && resolve correctly to false witout needing to check last character
+    -- also avoids ignoring any trailing \n added by previously applied edit
+    teh False xs $ doEdit x txt
 
-data Proceed = WithStdIn [Edit]
-             | WoStdIn ([Edit], T.Text)
-             | Stop Cause
+-- takeas an Edit and a Text and only applies the changes to the correct part of the text depending on Target
+-- first checks if the edit has no changes, and if so ignores it all together
+doEdit :: Edit -> T.Text -> T.Text
+doEdit (_, []) txt = txt -- no changes means no edit to do
+-- do changes just to the whole body of text
+doEdit (Whole, chgs) txt =
+  doChanges chgs txt
+-- do changes to each individual line of text
+doEdit (Each, chgs) txt =
+  T.unlines ( map (doChanges chgs) (T.lines txt))
+-- only do changes to the numbered lines given to Only
+doEdit (Only ns, chgs) txt =
+  T.unlines $ map snd(mapIf (\(x,y)-> (x,(doChanges chgs y))) (\(x,_)-> x `elem` ns) (zip [1..] (T.lines txt)))
+  -- FuNcTiOnAl PrOgRaMmInG iS eLeGaNt
 
-data Cause = Help
-           | Macs
-           | Penguin
-           | ArgParseErr T.Text
-
-type Edit  = (Target, [Change])
-
-data Change = Fr T.Text T.Text
-            | Ins T.Text Int
-            | Rem Int Int
-  deriving (Read, Show)
-
-data Target = Whole
-            | Each
-            | Only [Int]
-  deriving (Read, Show)
-
-type Macros = M.Map T.Text Edit
+-- unconcerned with target, only has a list of Changes to do and a Text to do them to
+doChanges :: [Change] -> T.Text -> T.Text
+doChanges chg txt = -- applying change to whole blob of text
+  case chg of
+    [] -> txt -- no more changes to do return final text
+    (Ins tx n):chgs ->
+      if n >= 0 then -- counting forward
+        doChanges chgs ((T.take n txt) <> tx <> (T.drop n txt))
+      else -- counting backward
+        doChanges chgs ((T.dropEnd ((abs n)-1) txt) <> tx <> (T.takeEnd ((abs n)-1) txt))
+    (Rem a b):chgs ->
+      if b==0 then
+          doChanges chgs txt -- delete nothing
+      else
+        if a >= 0 then -- counting foward for skipped letters
+          if b > 0 then -- deleting foward
+            doChanges chgs ((T.take a txt) <> (T.drop (a+b) txt))
+          else -- deleting back
+            doChanges chgs ((T.dropEnd (abs b) (T.take a txt)) <> T.drop a txt)
+        else -- counting back for skipped letters
+          if b > 0 then -- deleting foward
+            doChanges chgs ((T.dropEnd (abs a) txt) <> (T.drop b (T.takeEnd (abs a) txt)))
+          else -- deleting back
+            (T.dropEnd ((abs a)+(abs b)) txt <> (T.takeEnd (abs a) txt))
+    (Fr find repl):chgs ->
+      doChanges chgs (T.replace find repl txt)
 
 -- -----------------*
 -- helper functions
 -- -----------------*
 
--- like T.words, but concatenates a word that start's with '"' with all subsequent words until found a word that ends
--- with '"' only if it's not preceded by a '\'
--- TODO: ignore closing escaped quote mark ending a quote
--- ALSO: let's just strip the quotes here to make it easy on parseChgs'
--- and then we get non quoted single word text arguments for free
-{--
-wordsandquo :: T.Text -> [T.Text]
-wordsandquo t =
-  let (pre, rst) = break (\x->T.take 1 x == "\"") $ T.words t in
-    -- (all the words before the first word to start with a ", the first word to start with a " and all of the rest of the words)
-    if rst == [] then -- there are no words that start with a quote, T.words worked fine
-      pre
-    else -- there are quotes
-      case takeUntil (\x->T.takeEnd 1 x == "\"" && T.takeEnd 2 x /= "\\\"") rst of -- take words up to the first one to end with a non escaped "
-        (_, []) -> -- either there was no closing quote, all of rst is a quote, or rst is literally just "
-          if rst == ["\""] then -- rst is just a single ", there is no quote to group together, T.words would've worked
-            pre <> rst
-          else if ((T.takeEnd 1 $ T.unwords rst) == "\"") then -- rst starts and ends with a " and isn't just a single "
-            pre <+> (T.drop 1 $ T.dropEnd 1 $ T.unwords rst) -- unwords rst, strip quotes, and append to end of rst
-          else -- there was no closing quote, no quote to group toghether, T.words would've worked
-            pre <> rst
-        (quo, aftquo) -> -- found a closing quote making all of quo one quote, unwords quo, strip " and recurse on remainder
-          (pre <+> (T.drop 1 $ T.dropEnd 1 $ T.unwords quo)) <> (wordsandquo $ T.unwords aftquo)
---}
-
+-- like T.words, but combines any group of words wrapped in quotes as a single word, preserving internal whitespace
 wordsandquo :: T.Text -> [T.Text]
 wordsandquo t = map T.pack $ waq [] [] $ T.unpack t
 -- convert text to list of char, and feed it to real function with empty accumulator lists
 -- then convert the results back into T.Texts
 
--- wordsandquo' wAcc wsAcc txt
+-- waq wAcc wsAcc txt
 -- wAcc is the word accumulator
 -- wsAcc is words accumulator
 -- txt is the text that needs to be split
@@ -457,6 +386,10 @@ waq wAcc wsAcc txt=
  making this a base case, so instead I will treat the '"' in h as if it were escaped
 --}
 
+-- meant to be called on a portion of a string following an opening quote
+-- returns Nothing if closing quote cannot be found
+-- retursn Just (String, String) with the rest of the quote, and the rest of the text
+-- if an unescaped closing quote can be found
 -- takes an accumulator string, and the string to find the closing quote in
 -- and returns either Just (quo, rst) or if no closing quote can be found, nothing
 finishQuo :: String -> String -> Maybe (String, String)
@@ -466,37 +399,6 @@ finishQuo wAcc ('\\':c:txt) = -- there are atleast two chars left but the first 
   finishQuo (wAcc<+>c) txt -- throw away the \, tack the next char onto wAcc and recurse
 finishQuo wAcc (c:txt) = -- we found another character, but it's not the closing quote
   finishQuo (wAcc<+>c) txt -- tack it on to the wAcc and recurse
-
-
-{-- nvm this looks ugly
-wordsandquo' "" wsAcc "" = wsAcc -- no more text to split, no wAcc to append to it, just return wsAcc
-wordsandquo' wAcc wsAcc "" = wsAcc <+> wAcc -- no more text to split, return wsAcc <+> wAcc
--- we know txt is not empty
-wordsandquo' "" wsAcc (' ':txts) = -- wAcc is empty, and head txt is ' ', recurse with tail of txt
-  wordsandquo' "" wsAcc txts
-wordsandquo' wAcc wsAcc (' ':txts) = -- head txt is ' ', append wAcc to wsAcc and recurse with empty wAcc and tail txt
-  wordsandquo' "" (wsAcc<+>wAcc) txts
--- we know txt is not empty and doesn't start with a space
-wordsandquo' wAcc wsAcc (h:[]) = -- txt only has one char left, append to wAcc and return new wAcc appended to wsAcc
-  wsAcc <+> (wAcc <+> h)
--- we know txt has at least two chars and doesn't start with a space
-wordsandquo' wAcc wsAcc (h:hh:t) =
-  if h == '\' then -- first char is escaping second char
-    wordsandquo' (wAcc<+>hh) wsAcc t -- drop first char, add second char to wAcc, recurse with tail
-  else if h == '"' then -- first char is starting a quote
-    let (quo, rst) = finishquo "" (hh:t) in
-      wordsandquo' ""
---}
-
--- if no value within ls is True for b then
---   takeUntil b ls behaves is literally just break b ls
--- if some value a within ls is True for b then for the first a
---   takeuntil b ls == (prea<+>a,posta)
-takeUntil ::  (a -> Bool) -> [a] -> ([a],[a])
-takeUntil b ls =
-  case break b ls of
-    (_, []) -> (ls, [])
-    (pre, (r:st)) -> (pre<+>r,st)
 
 -- split a list into the values after a value that returns true and the rest of the list with the true values and their successor
 -- more concretely, will be used to pull out all instances of a given flag and the arg that follows from a bigger list
@@ -518,11 +420,11 @@ extArg f ls@(a:aa) = extArg' f ([], []) ls -- this list has two or more values s
 extArgs' :: (a -> Bool) -> ([(a,a)], [a]) -> [a] -> ([(a,a)], [a]) -- the less ergonomic function we actually need
 extArgs' _ (wnt, othr) [] = (wnt, othr) -- empty list to sort through, base case.  I remember when recursion was hard to understand
 extArgs' _ (wnt, othr) [a] = (wnt, othr<+>a) -- one item list, other base case.  Now I just slap this together without even thinking
-extArgs' f (wnt, othr) (h:hh:rem) =
+extArgs' f (wnt, othr) (h:hh:rst) =
   if f h then -- checking if we want to add to the wanted accumulator
-    extArgs' f (wnt<+>(h,hh), othr) rem -- we found what we want so we drop the flag and the argument and recurse with what's left
+    extArgs' f (wnt<+>(h,hh), othr) rst -- we found what we want so we drop the flag and the argument and recurse with what's left
   else
-    extArgs' f (wnt, othr<+>h) (hh:rem) -- not a flag we wanted, add it to the others and recurse
+    extArgs' f (wnt, othr<+>h) (hh:rst) -- not a flag we wanted, add it to the others and recurse
 
 showT :: Show a => a -> T.Text
 showT = T.pack . show
@@ -530,28 +432,8 @@ showT = T.pack . show
 readMaybeT :: Read a => T.Text -> Maybe a
 readMaybeT = readMaybe . T.unpack
 
-readT :: Read a => T.Text ->  a
-readT = read . T.unpack
-
 putTxt :: T.Text -> IO ()
 putTxt = putStr . T.unpack
-
-
--- these functions were already in T.Text idk why I never noticed tf
--- takeEnd :: Int -> T.Text -> T.Text
--- takeEnd n  = (T.reverse . T.take n . T.reverse)
---
--- dropEnd :: Int -> T.Text -> T.Text
--- dropEnd n  = (T.reverse . T.drop n . T.reverse)
-
-droplen :: T.Text -> T.Text -> T.Text
-droplen stub whole = T.drop (T.length stub) whole
-
-takeLast :: Int -> [a] -> [a]
-takeLast n = (reverse . take n . reverse)
-
-dropLast :: Int -> [a] -> [a]
-dropLast n = (reverse . drop n . reverse)
 
 -- remove any duplicate values from a list, preserving order, leaving last iteration of an item in the list
 -- nub typically only saves first instance of a value and removing remaing instances

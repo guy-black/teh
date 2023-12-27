@@ -1,64 +1,5 @@
 
 - test to make sure everything works as it should
--- wordsandquo has a bug when parsing a quote of just space
-  example raw text: whole fr " " -
--- should become the following [Text]
-  ["whole", "fr", " ", "-"]
--- but instead becomes
-  ["whole","fr","","","-"]
--- this is because wordsandquo starts with applying T.words to the input text, and then looks through that text for a
-   word starting with a quote and looks ahead in the list for a word closing with a quote, and combines those words and
-   their contents
--- however T.word throws away spaces thus T.words applied to the raw text above evaluates to
-  ["whole", "fr", "\"", "\"", "-"]
--- solution is to rewrite wordsandquo without using T.words
-  rough puedocode sketch would be
-
-wordsandquo :: T.Text -> [T.Text] -> [T.Text]
-wordsandquo "" acc = acc -- base case and allow us to assume that txt is nonempty to safely call T.head
-wordsandquo txt acc =
-  if T.head txt == ' ' then -- white space we can safely throw way
-    wordsandquo (T.drop 1 txt) acc
-  else if T.head txt == '"' then -- we're entering a quote
-    let quo = takeUntil (=='"') T.unpack $ T.drop 1 txt in
-     -- to take characters until you find a closing quote and then have the whole quote, whitespace and all
-     -- but also add conditions to ensure the quote I match isn't escaped
-     -- and to preserve current logic it should also make sure the quote is followed by whitespace but maybe I should
-       -- drop that requirement.  dropping that would allow not adding a space in between the find and replace if both have to be
-       -- quoted anyway and I think shouldn't break any thing else not sure
-       -- so I could do echo "hoy hog" | teh -n 'each fr "y h""t d"' and save a keystroke if I want
-       -- more importantly it would make this logic easier to implment
-     wordsandquo rst (acc <+> (T.pack $ '"':quo))
-   else -- entering a plain nonquote word
-     -- ehh you get the idea, or atleat I hope I will when I get a chance to work more on this
-
--- less sleepy idea
-  take text to use as a string and track a word accumulator and a words accumulator
-  if text is empty and word accumulator are empty then return words accumulator
-  if text is empty and word accumulator is not empty return words accumulator <+> word accumulator
-  -- we know text isn't empty
-  if head of text is a space then recurse with text tail and if wordacc isn't empty wordsacc<+>wordacc
-  -- we know text doesn't start with a space
-  if text is 1 char, return wordsacc <+> (wordacc <+> char)
-  -- we know text is atleast 2 chars
-  if head is a '\' then throw it away, add second char to wordacc, and recurse without thefirst two chars
-  if head is a '"' then
-    let (quo,rst) = finishquo $ drop 1 txt
-    recurse with wordsacc<+>wordacc<+>quo and rst
-  -- we know the first character isn't a quote or an escaped char
-  recuse with word
-
-  finishquo take text to find quo and word acc
-  if text is empty return (wordacc, "")
-  -- we know text is not empty
-  if text is one char, append it to wordacc and recurse with head
-  -- we know text is atleast 2 chars
-  if first char is '\' then append second char to wordacc and recurse with drop 2 text
-  -- we know first char is not escaped
-  if first char is '"' then return (wordacc, drop 1 text)
-  -- we know the first char isn't a closing quote
-  else recurse with wordacc<+>head drop 1 text
-
 
 - write a better description for readme
 - write a pretty print macros function
@@ -100,3 +41,33 @@ but what if we have teh -t foobar Rem 8 5
   I will implement it.  Hell I'd be over the moon if anyone else even finds any use in this little tool at all.  For now
   I don't think I can gain any use for a -w flag so I'm scrapping that whole idea for now pending the existence of other people
   using this tool and wanting such a feature
+
+
+logic behind now wordsandquo function incase I need to reference it again later
+  rough puedocode sketch would be
+
+take text to use as a string and track a word accumulator and a words accumulator
+  if text is empty and word accumulator are empty then return words accumulator
+  if text is empty and word accumulator is not empty return words accumulator <+> word accumulator
+  -- we know text isn't empty
+  if head of text is a space then recurse with text tail and if wordacc isn't empty wordsacc<+>wordacc
+  -- we know text doesn't start with a space
+  if text is 1 char, return wordsacc <+> (wordacc <+> char)
+  -- we know text is atleast 2 chars
+  if head is a '\' then throw it away, add second char to wordacc, and recurse without thefirst two chars
+  if head is a '"' then
+    let (quo,rst) = finishquo $ drop 1 txt
+    recurse with wordsacc<+>wordacc<+>quo and rst
+  -- we know the first character isn't a quote or an escaped char
+  recuse with word
+
+  finishquo take text to find quo and word acc
+  if text is empty return (wordacc, "")
+  -- we know text is not empty
+  if text is one char, append it to wordacc and recurse with head
+  -- we know text is atleast 2 chars
+  if first char is '\' then append second char to wordacc and recurse with drop 2 text
+  -- we know first char is not escaped
+  if first char is '"' then return (wordacc, drop 1 text)
+  -- we know the first char isn't a closing quote
+  else recurse with wordacc<+>head drop 1 text
