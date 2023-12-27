@@ -5,7 +5,7 @@ module Main (main) where
 import System.Environment (getArgs)
 import System.Directory (doesFileExist, XdgDirectory(XdgConfig), getXdgDirectory)
 import Text.Read (readMaybe)
-import qualified Data.Map.Strict as M    -- for M.Map
+import qualified Data.Map.Strict as M    -- for M.Map and related functions
 import Data.Map.Strict ((!?))
 import Data.List (nub)
 import Data.Either (partitionEithers)
@@ -35,9 +35,8 @@ main = do
     let macstoignore = map snd macstoignore'-- add these lines to just have the argument
     let finalmaclist = (dedupe $ confDir:".teh":cflagmacs) `remAll` macstoignore -- final list of files to look for macros
     parsedMacsAndErrs <- mapM seekMacs finalmaclist -- convert our files to look for macros into a [(errors::T.Text, Macros)]
-    let labeledMacsAndErrs = zip finalmaclist parsedMacsAndErrs -- to make it easier for pringMacros to get the file name and path
     if "--show-macros" `elem` maclessargs then -- we don't actually need to edit text, just parse macros and print details
-      putTxt $ printMacros labeledMacsAndErrs -- TODO actually make printMacros do something useful
+      putTxt $ printAllMacros parsedMacsAndErrs
     else do  -- we can squish our parsed marcros into one big Macros and toss forget errors or which file they came from
       let finalMacs = mconcat $ reverse $ map snd parsedMacsAndErrs
       -- mconcat will favor values to the left, but I want to favor values to the right, so reverse it first
@@ -105,9 +104,9 @@ seekMacs f = do
       Right file' ->
         let (err, m) = parseMacs file' in
           if err=="" then
-            return (f<> "parsed with no errors", m)
+            return (f<>" parsed with no errors", m)
           else
-            return ("errors for "<>f<>":\n"<>err, m)
+            return (f<>" parsed with errors.\nerrors for "<>f<>":\n"<>err, m)
   else
     return (f <> " not found", M.empty)
 
@@ -139,8 +138,63 @@ parseMac (i, txt) =
               Just (Right (name, ed))
 
 -- converts the list of all macros teh can see and prints them in a neat and orderly fashion
-printMacros :: [(T.Text, (T.Text, Macros))] -> T.Text
-printMacros _ = "I'll do it this afternooooon"
+printAllMacros :: [(T.Text, Macros)] -> T.Text
+printAllMacros = (T.unlines . map printMacros)
+
+printMacros :: (T.Text, Macros) -> T.Text
+printMacros (fande, macs) =
+  T.unlines $ fande:(map printMacro $ M.toList macs)<+>"\n name   default target      changes\n"
+
+printMacro :: (T.Text, Edit) -> T.Text
+printMacro (name, (targ, chgs)) = name <> "     " <> showT targ <> "      " <> showT chgs
+
+
+{-- this is ugly but I could make it nicer later maybe
+-- -or maybe I just spent too long typing it and can't bring myself to delete it yet idk
+
+printMacro :: (T.Text, Edit) -> T.Text
+printMacro (name, (targ, chgs)) = name <> " will " <> (printChgs chgs) <> " on " <> (printTarg targ)
+
+printChgs :: [Change] -> T.Text
+printChgs [] = "whoops, somehow the function printChgs got an empty list of changes to print, that shouldn't happen.  \
+             \ if you're me, then me should go fix it, if you're not me then please file an issue at github.com/guy-black/teh"
+printChgs (chg:[]) = printChg chg
+printChgs (chg:chgg:[]) = printChg chg <> ", and " <> printChg chgg
+printChgs (chg:chgs) = printChg chg <> ", " <> printChgs chgs
+
+printChg :: Change -> T.Text
+printChg chg =
+  case chg of
+    Fr f r -> "find all "<>f<>" and replace them with "<>r
+    Ins t i ->
+      if i>=0 then
+        "insert "<>t<>" after the first "<>showT i<>" character(s)"
+      else
+        "insert "<>t<>" after the "<>(showT $ abs i)<>"(st/nd/rd/th) char from the end"
+    Rem s e ->
+      if s>=0 then
+        if e>=0 then
+          "remove the next "<>showT e<>" characters after the first "<>showT s
+        else
+          "remove the previous "<>(showT $ abs e)<>" characters before the first "<>showT s
+      else
+        if e>=0 then
+          "remove the next "<>showT e<>" characters after the first "<>(showT $ abs s)<>" chars from the end"
+        else
+          "remove the previous "<>(showT $ abs e)<>" characters before the first "<>(showT $ abs s)<>" chars from the end"
+
+printTarg :: Target -> T.Text
+printTarg Whole = "the whole text"
+printTarg Each = "each line of text"
+printTarg (Only is) = "only lines " <> printInts is <> " of text"
+
+printInts :: [Int] -> T.Text
+printInts [] = "whoops, somehow the function printInts got an empty list of ints to print, that shouldn't happen.  \
+             \ if you're me, then me should go fix it, if you're not me then please file an issue at github.com/guy-black/teh"
+printInts (i:[]) = showT i
+printInts (i:is:[]) = showT i <> ",and " <> showT is
+printInts (i:is) = showT i <> ", " <> showT is
+--}
 
 -- -----------------*
 -- argument parsing
