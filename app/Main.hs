@@ -49,11 +49,11 @@ main = do
         let readStdIn = "--stdin" `elem` argsSansTF
         (tfErrs, tfVals) <- whatTF ([],[]) tfargs
         if (not ignoreErrors)&&((not $ null tfErrs)||(not $ null edErrs)) then -- if there are errors and we aren't ignoring them
-          putStdErr $ "errors on parsing -t and -f flags \n" <>  (T.unlines tfErrs)
-                         <> "\nerrors on parsing edits\n" <> (T.unlines edErrs)
+          putStdErr $ "errors on parsing -t and -f flags \n" <>  (T.unlines tfErrs) -- I'm okay with the extra
+                         <> "errors on parsing edits\n" <> (T.unlines edErrs) -- newline reporting errors
         else -- there are no errors, or we're just ignoring them
           if readStdIn then do -- we are editing tfVals and stdIn
-            putTxt $ T.unlines $ map (teh nflag pEdits) tfVals
+            putTxt $ T.unlines $ map (teh nflag pEdits) tfVals -- I'm okay with the extra newline between tf text and stdin
             getContents >>= (return . T.pack) >>= (\x -> putTxt $ teh nflag pEdits x)
           else -- we are only editing tfVals
             putTxt $ T.unlines $ map (teh nflag pEdits) tfVals
@@ -113,7 +113,7 @@ seekMacs f = do
 -- takes the raw text of a file and generates a Text value listing any parsing errors, and a Macros of what could be parsed
 parseMacs :: T.Text -> (T.Text, Macros)
 parseMacs txt =
-  (\(xs, ms)->(T.unlines xs, M.fromList ms)) $ -- convert list of errors to one big error, and list of (Text, Edit) to Macros
+  (\(xs, ms)->(fxunlines xs, M.fromList ms)) $ -- convert list of errors to one big error, and list of (Text, Edit) to Macros
   partitionEithers $ -- convert list of Either error (Text, Edit) to (list of errors, list of (Text, Edit))
   catMaybes $ -- remove the nothings that represent commented and blank lines
   map parseMac $ -- convert each line into either an error, or a (Text, Edit)
@@ -351,10 +351,16 @@ doEdit (Whole, chgs) txt =
   doChanges chgs txt
 -- do changes to each individual line of text
 doEdit (Each, chgs) txt =
-  T.unlines ( map (doChanges chgs) (T.lines txt))
+  if (T.takeEnd 1 txt == "\n") then -- standard T.unlines will work fine
+    T.unlines ( map (doChanges chgs) (T.lines txt))
+  else -- need T.unlines will add a surprise newline
+    T.dropEnd 1 $ T.unlines ( map (doChanges chgs) (T.lines txt))
 -- only do changes to the numbered lines given to Only
 doEdit (Only ns, chgs) txt =
-  T.unlines $ map snd(mapIf (\(x,y)-> (x,(doChanges chgs y))) (\(x,_)-> x `elem` ns) (zip [1..] (T.lines txt)))
+  if (T.takeEnd 1 txt == "\n") then -- standard T.unlines will work fine
+    T.unlines $ map snd(mapIf (\(x,y)-> (x,(doChanges chgs y))) (\(x,_)-> x `elem` ns) (zip [1..] (T.lines txt)))
+  else -- need T.unlines will add a surprise newline
+    T.dropEnd 1 $ T.unlines $ map snd(mapIf (\(x,y)-> (x,(doChanges chgs y))) (\(x,_)-> x `elem` ns) (zip [1..] (T.lines txt)))
 
 -- unconcerned with target, only has a list of Changes to do and a Text to do them to
 doChanges :: [Change] -> T.Text -> T.Text
@@ -538,6 +544,13 @@ mapIf f b (x:xs) =
 
 putStdErr :: T.Text -> IO()
 putStdErr = hPutStr stderr . T.unpack . (<>"\n")
+
+-- for some silly reason T.unlines adds a \n to the end of the new text.
+-- which works perfect if the [T.Text] came from applying T.lines to a T.text
+-- that ends with a newline, but starts adding mysterious newlines out of no
+-- where for a [T.Text] that came any other way
+fxunlines :: [T.Text] -> T.Text
+fxunlines = (T.dropEnd 1 . T.unlines)
 
 (<+>) :: [a] -> a -> [a]
 (<+>) xs x = xs<>[x]
