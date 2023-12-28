@@ -248,21 +248,21 @@ parseEdit macs txt =
     Nothing -> -- argument is not just a macro, it must start with a Target
       let t = head $ T.words txt
           c = T.unwords $ drop 1 $ T.words txt in
-        if any (t==) ["Whole","whole"] then  -- target is Whole
+        if any (t==) ["Whole","whole","W","w"] then  -- target is Whole
           case macs !? c of -- the change is just a macro
             Just (_,chs) -> Right (Whole, chs)
             Nothing -> -- change needs to be parsed
               case parseChgs macs c of
                 Left err -> Left err
                 Right chs -> Right (Whole, chs)
-        else if any (t==) ["Each", "each"] then  -- target is Each
+        else if any (t==) ["Each", "each", "E", "e"] then  -- target is Each
           case macs !? c of -- the change is just a macro
             Just (_,chs) -> Right (Each, chs)
             Nothing -> -- change needs to be parsed
               case parseChgs macs c of
                 Left err -> Left err
                 Right chs -> Right (Each, chs)
-        else if any (t==) ["Only", "only"] then -- target is some Only, but need to find the numbers
+        else if any (t==) ["Only", "only", "O", "o"] then -- target is some Only, but need to find the numbers
           let (l', r') = span (\ch -> or $ map ($ ch) [isSpace, isDigit]) $ T.unpack c -- TODO, rewrite with T.span why did I do this?
               (l, r) = (T.pack l', T.pack r') in -- this pulls any numbers or white space immediately after the word Only
             case (readMaybeT ("["<>(T.intercalate "," $ T.words l)<>"]")::Maybe [Int]) of
@@ -298,7 +298,7 @@ parseChgs' m (t:ts) acc =
           parseChgs' m cs ((Fr a b):acc)
       _ ->
         Left $ "Error: " <> t <> " needs to be followed by two strings, but I found less than two"
-  else if any (t==) ["ins", "in", "Ins", "In"] then
+  else if any (t==) ["ins", "Ins"] then
     case ts of
       (a:b:cs) ->
         case readMaybeT b::Maybe Int of

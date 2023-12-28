@@ -1,8 +1,9 @@
+The document that used to be my TODO list for this project.
 
-- test to make sure everything works as it should
+it now stands and as a document of design decisions I've made while working on the project and ideas regarding features to add later.
+mostly just here for my own reference for the next time I need to work on this project after being away for so long and don't
+remember why I made the choices I made while making this
 
-- write a better description for readme
-- write a better pretty print macros function
 
 
 - work out how to implement a stream editing mode
@@ -42,33 +43,3 @@ but what if we have teh -t foobar Rem 8 5
   I will implement it.  Hell I'd be over the moon if anyone else even finds any use in this little tool at all.  For now
   I don't think I can gain any use for a -w flag so I'm scrapping that whole idea for now pending the existence of other people
   using this tool and wanting such a feature
-
-
-logic behind now wordsandquo function incase I need to reference it again later
-  rough puedocode sketch would be
-
-take text to use as a string and track a word accumulator and a words accumulator
-  if text is empty and word accumulator are empty then return words accumulator
-  if text is empty and word accumulator is not empty return words accumulator <+> word accumulator
-  -- we know text isn't empty
-  if head of text is a space then recurse with text tail and if wordacc isn't empty wordsacc<+>wordacc
-  -- we know text doesn't start with a space
-  if text is 1 char, return wordsacc <+> (wordacc <+> char)
-  -- we know text is atleast 2 chars
-  if head is a '\' then throw it away, add second char to wordacc, and recurse without thefirst two chars
-  if head is a '"' then
-    let (quo,rst) = finishquo $ drop 1 txt
-    recurse with wordsacc<+>wordacc<+>quo and rst
-  -- we know the first character isn't a quote or an escaped char
-  recuse with word
-
-  finishquo take text to find quo and word acc
-  if text is empty return (wordacc, "")
-  -- we know text is not empty
-  if text is one char, append it to wordacc and recurse with head
-  -- we know text is atleast 2 chars
-  if first char is '\' then append second char to wordacc and recurse with drop 2 text
-  -- we know first char is not escaped
-  if first char is '"' then return (wordacc, drop 1 text)
-  -- we know the first char isn't a closing quote
-  else recurse with wordacc<+>head drop 1 text
