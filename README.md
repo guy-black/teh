@@ -54,8 +54,11 @@ changes can either be:
  `Ins` or `ins` takes a piece of text to insert, and an offset to insert it at.
   If the offset 0 or greater, that is the number of characters to skip before inserting the text ex. an offset of 0 will place the text at teh beginning, and an offset of 3 will insert the text after the first 3 chars
   If the offet is a negative number then the text will be placed after the absolute value of the offset charactes from the end. ex and offset of -1 will place text after the first character from the end which is the last character so at the end of the text.  an offset of -3 will place the text after the 3rd character from the end, so right before the last two characters
+
  - `rem <num> <num>`
-to remove text
+  `Rem`, `rem`, `Rm`, or `rm` takes a number for offset, and a number of characters to delete.
+  Like with ins, if the off set is negative it will start from the absolute value of the offset characters from the end.  An offset of -1 will start before the last character, an offset of -3 will start from before the 3rd character from the end
+  If the number of characters to delete is >0 it will delete that many characters to the right from the start, and it will delete to the left for negative numbers.
 
 ## Example usage
 
@@ -124,7 +127,25 @@ To see how to make clunky teh commands less clunky keep reading to the Macros se
 
 ## Macros
 
+Macros are a way to save an edit to a single word.  For example to parenthesize a body of text you might use the command:
+`teh 'Whole Ins "(" 0 Ins ")" -1'`
+Over the `whole` body of text `insert "("` before `0` characters from the start then `insert ")"` before `1` character from the end
+If you wanted to make the command shorter you could add the following to your macros
+`"par" Whole Ins "(" 0  Ins ")" -1`
+Then you could parenthesize a whole portion of text using the command:
+ `teh par`
+You can also override the default target and parenthesize each line with
+ `teh each par`
+
+You can see an example of a teh macro file in the `.teh` file in the root directory of this repo.
+By default teh will look for macros first in your `$XDG_CONFIG/.teh` and then in`./.teh`, and then in any location you pass in with a -c flag.
+If two different macros are defined in multiple file then the last one checked will override the others.  For example, if you have  macro named "example" in `XGD_CONFIG/.teh`, and `./.teh`, then the version in `./.teh` will be used.
+If you also define it in another file that you pass in with a `-c` flag then that version will be used
+
 ## Installation
+
+If you don't already have it, [install Stack](https://docs.haskellstack.org/en/stable/#how-to-install-Stack).
+Once you have Stack installed, clone this repo and run `stack install` from within the root of this directory.
 
 ## features left to add
 
@@ -132,8 +153,30 @@ These are feature I want to have working in order for this project to feel compl
 
 
 - Stream editing
-- variable in macro names
-- Configurable `--show-macros` behavior
-- syntax to access overridden macro
+  - If you have a command that regular prints something to `stdout` like `vmstat 1`, I want to pipe that command into teh and edit every block of text as I gets printed.
+  - I suspect this is tricky becaue haskell does IO lazily and expects to read in all stdin before doing any computations on it. I've made it work when the target is Each and rm and ins are relative to the start of the line, but that's not good enough
+  - If you know how to Haskell and have ideas on how to implement and could at least give me a nudge in the right direction I'd be HUGELY greatful
+  - Everything else on this list I do feel like I could implement and is more of a roadmap of stuff to do when I get back around to this.
+
 - `--show-macros` to visually indicate a macro is overridden
-- reference other macros while defining macros
+  - when you run `teh --show-macros` it shows parsed macros from lowest priority to the highest priority
+  - ex. if you have two different macros with the same label the one that will take precedence is the one that gets printed last
+  - I would like to be able to mark a macro as overridden if another macro further down has the same name
+
+- syntax to access overridden macro
+  - if you have a macro that is overridden, but you absolutely need to use it without changing which macros are inscope, give a way to preface the name of the macro to specify which file you want to pullfrom for it
+
+- edit repeats
+  - for instance look at the macro "in" for indenting from the examples
+  - "in"     Each  Ins " " 0
+  - `teh in` will indent each line by one space, `teh in in` by two, `teh in in in` by 3, etc etc.
+  - I want to add a repeating syntax something maybe like
+  - `teh in *5` or something that will be shorthand for `teh in in in in in`
+- other changes
+  - like `reverse x y` to reverse all of the characters from x to y in the text.
+    - eg `reverse 1 -1` to reverse the entire text
+    - `reverse 3 10` to reverse from the second character to the 10th caracter
+  - `swap x1 y1 x2 y2` to swap all characters from x1-y1 with all the character from x2-y2
+
+
+If there are any other features you think would improve this project or find any bug please do open an issue to let me know and I'll see if I can implement or fix it!

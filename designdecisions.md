@@ -6,9 +6,12 @@ remember why I made the choices I made while making this
 
 
 
-- work out how to implement a stream editing mode
+# ideas on how to implement a stream editing mode
   - if you have a command that regularly prints data to stdout (eg vmstat 1 or exoutput) and pipe it into teh
     teh should apply edits to every thing it prints to stdout in real time then print it to std out
+  - forever $ getLine >>= (return . T.pack) >>= (\x -> putTxt $ teh nflag pEdits x)` *kinda* works but only if:
+    - the target is Each and
+    - any rm or ins are done relative to the begining of the line
   - maybe could be done using hClose and Control.Concurrent.threadDelay, idk need to learn more how concurrent haskell works
 
 # misc notes on necessity of -f flag

@@ -65,7 +65,7 @@ main = do
 
 
           -- forever $ getLine >>= (return . T.pack) >>= (\x -> putTxt $ teh nflag pEdits x)
-          -- this /kinda/ works for editing stream from std in if you only want to work with each line, and ony inser
+          -- this /kinda/ works for editing stream from std in if you only want to work with each line, and ony insert
           -- and delete relative to the beginning of the line
           -- overall not good enough
 
