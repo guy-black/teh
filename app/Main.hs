@@ -368,10 +368,13 @@ doChanges chg txt = -- applying change to whole blob of text
   case chg of
     [] -> txt -- no more changes to do return final text
     (Ins tx n):chgs ->
-      if n >= 0 then -- counting forward
-        doChanges chgs ((T.take n txt) <> tx <> (T.drop n txt))
-      else -- counting backward
-        doChanges chgs ((T.dropEnd ((abs n)-1) txt) <> tx <> (T.takeEnd ((abs n)-1) txt))
+      if ((T.length $ T.take (abs n) txt) == abs n) then -- a lazy way to check if the lenght of txt >= the index to insert txt
+        if n >= 0 then -- counting forward
+          doChanges chgs ((T.take n txt) <> tx <> (T.drop n txt))
+        else -- counting backward
+          doChanges chgs ((T.dropEnd ((abs n)-1) txt) <> tx <> (T.takeEnd ((abs n)-1) txt))
+      else -- the index to inster goes out of bounds of the text to insert in
+        doChanges chgs txt -- just skip skip the change
     (Rem a b):chgs ->
       if b==0 then
           doChanges chgs txt -- delete nothing

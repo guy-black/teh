@@ -158,6 +158,16 @@ These are feature I want to have working in order for this project to feel compl
   - If you know how to Haskell and have ideas on how to implement and could at least give me a nudge in the right direction I'd be HUGELY greatful
   - Everything else on this list I do feel like I could implement and is more of a roadmap of stuff to do when I get back around to this.
 
+- adjustable out of bounds Insert bahavior
+  - right now if you run something like `teh -t hi 'w ins ho 8'` no change will occur.  This is to make all behavior any edit does very explicit and unambiguous;
+    - if you're gonna insert text at an index greater than the length of the text you want to insert it in you must explicitly lengthen the text first
+  - however I can see how that can be annoying in some cases so I want to add a flag to let you adjust the behavior when inserting text outside of the bounds of the text being edited 3 options I can see are:
+    - ignore: the current behavior of just ignore the change
+    - end: just tack the text on at the end, making the above example equivalent to `teh -t hi 'w ins ho 2'`
+    - pad: pad the end of the text with white space until it is long enough to make the insert inbounds converting the previous example to `teh -t hi 'w ins "      " -1 ins ho 8'`
+      - maybe also allow a configurable text to pad the text out with
+  - this could also be a way to deal with outofbounds issues when I implement the `reverse` and `swap` changes mentioned below
+
 - `--show-macros` to visually indicate a macro is overridden
   - when you run `teh --show-macros` it shows parsed macros from lowest priority to the highest priority
   - ex. if you have two different macros with the same label the one that will take precedence is the one that gets printed last
@@ -172,11 +182,20 @@ These are feature I want to have working in order for this project to feel compl
   - `teh in` will indent each line by one space, `teh in in` by two, `teh in in in` by 3, etc etc.
   - I want to add a repeating syntax something maybe like
   - `teh in *5` or something that will be shorthand for `teh in in in in in`
+
+- don't require target if all text to edit is only one line
+  - as it is, even if all the text you are applying edits to are only one line each, you still need to specify a target to apply changes to even though I literally doesn't make a difference
+  - it shouldn't be too terribly difficult to do a check of all the text to edit is only one line before parsing edits, this would be complicated with streaming edits though
+
 - other changes
   - like `reverse x y` to reverse all of the characters from x to y in the text.
     - eg `reverse 1 -1` to reverse the entire text
     - `reverse 3 10` to reverse from the second character to the 10th caracter
   - `swap x1 y1 x2 y2` to swap all characters from x1-y1 with all the character from x2-y2
+  - `justify <Left, Right, Center> length filler`: if the text being edited is shorter than the length specified then pad it out to that length using the filler text provided
+       - on justify Left, tack that filler on to the end
+       - on justify right, tack that filler on to the beginning
+       - and on center spread it evenly in the beginning and the end
 
 
 If there are any other features you think would improve this project or find any bug please do open an issue to let me know and I'll see if I can implement or fix it!
