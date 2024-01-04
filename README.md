@@ -158,6 +158,17 @@ These are feature I want to have working in order for this project to feel compl
   - If you know how to Haskell and have ideas on how to implement and could at least give me a nudge in the right direction I'd be HUGELY greatful
   - Everything else on this list I do feel like I could implement and is more of a roadmap of stuff to do when I get back around to this.
 
+- Batch/parrallel changes
+  - changes from each edit are applied two the whole text sequentially, just like edits so
+    - `teh -t "apple bApple" 'w fr a A' 'w fr A a'` and  `teh -t "apple bApple" 'w fr a A fr A a'` both result in "apple bapple"
+      - first all 'a' get replaced with 'A' making "Apple bApple"
+      - then all 'A' get replaced with 'a' making "apple bapple"
+  - it'd be cool if edits were done sequentially and changes were done all at once so
+    - `teh -t "apple bApple" 'w fr a A' 'w fr A a'` would still result in "apple bapple"
+      - first edit turns all 'a' to 'A', and then the second edit turns all 'A', including the new one, to 'a'
+    - `teh -t "apple bApple" 'w fr a A fr A a'` would resuld in "Apple bapple"
+      - both changes are part of the first edit so all 'a' would become 'A', and all 'A' that were in the original text become 'a' withough messing with the new 'A' created by the other change
+
 - adjustable out of bounds Insert bahavior
   - right now if you run something like `teh -t hi 'w ins ho 8'` no change will occur.  This is to make all behavior any edit does very explicit and unambiguous;
     - if you're gonna insert text at an index greater than the length of the text you want to insert it in you must explicitly lengthen the text first
