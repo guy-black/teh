@@ -246,7 +246,7 @@ parseEdit macs txt =
   case macs !? txt of-- check if the whole argument is just a macro
     Just ed -> Right ed
     Nothing -> -- argument is not just a macro, it must start with a Target
-      let t = head $ T.words txt
+      let t = head $ T.words txt -- head can fail if txt is only white space
           c = T.unwords $ drop 1 $ T.words txt in
         if any (t==) ["Whole","whole","W","w"] then  -- target is Whole
           case macs !? c of -- the change is just a macro
