@@ -153,7 +153,7 @@ These are feature I want to have working in order for this project to feel compl
 
 
 - Stream editing
-  - If you have a command that regular prints something to `stdout` like `vmstat 1`, I want to pipe that command into teh and edit every block of text as I gets printed.
+  - If you have a command that regular prints something to `stdout` like `vmstat 1`, I want to pipe that command into teh and edit every block of text as it gets printed.
   - I suspect this is tricky becaue haskell does IO lazily and expects to read in all stdin before doing any computations on it. I've made it work when the target is Each and rm and ins are relative to the start of the line, but that's not good enough
   - If you know how to Haskell and have ideas on how to implement and could at least give me a nudge in the right direction I'd be HUGELY greatful
   - Everything else on this list I do feel like I could implement and is more of a roadmap of stuff to do when I get back around to this.
@@ -169,6 +169,8 @@ These are feature I want to have working in order for this project to feel compl
     - `teh -t "apple bApple" 'w fr a A fr A a'` would resuld in "Apple bapple"
       - both changes are part of the first edit so all 'a' would become 'A', and all 'A' that were in the original text become 'a' withough messing with the new 'A' created by the other change
 
+- Generate a sed command from teh edits
+
 - adjustable out of bounds Insert bahavior
   - right now if you run something like `teh -t hi 'w ins ho 8'` no change will occur.  This is to make all behavior any edit does very explicit and unambiguous;
     - if you're gonna insert text at an index greater than the length of the text you want to insert it in you must explicitly lengthen the text first
@@ -183,20 +185,6 @@ These are feature I want to have working in order for this project to feel compl
   - when you run `teh --show-macros` it shows parsed macros from lowest priority to the highest priority
   - ex. if you have two different macros with the same label the one that will take precedence is the one that gets printed last
   - I would like to be able to mark a macro as overridden if another macro further down has the same name
-
-- syntax to access overridden macro
-  - if you have a macro that is overridden, but you absolutely need to use it without changing which macros are inscope, give a way to preface the name of the macro to specify which file you want to pullfrom for it
-
-- edit repeats
-  - for instance look at the macro "in" for indenting from the examples
-  - "in"     Each  Ins " " 0
-  - `teh in` will indent each line by one space, `teh in in` by two, `teh in in in` by 3, etc etc.
-  - I want to add a repeating syntax something maybe like
-  - `teh in *5` or something that will be shorthand for `teh in in in in in`
-
-- don't require target if all text to edit is only one line
-  - as it is, even if all the text you are applying edits to are only one line each, you still need to specify a target to apply changes to even though I literally doesn't make a difference
-  - it shouldn't be too terribly difficult to do a check of all the text to edit is only one line before parsing edits, this would be complicated with streaming edits though
 
 - other changes
   - like `reverse x y` to reverse all of the characters from x to y in the text.

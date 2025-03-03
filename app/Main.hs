@@ -4,14 +4,17 @@ module Main (main) where
 
 import System.Environment (getArgs)
 import System.Directory (doesFileExist, XdgDirectory(XdgConfig), getXdgDirectory)
-import Text.Read (readMaybe)
+import System.Console.GetOpt
+import System.Exit
 import qualified Data.Map.Strict as M    -- for M.Map and related functions
 import Data.Map.Strict ((!?))
-import Data.List (nub)
+import Data.List (nub, partition)
 import Data.Either (partitionEithers)
 import Data.Char (isSpace, isDigit)
 import Data.Maybe (catMaybes)
 import qualified Data.Text as T
+import qualified Data.Text.IO as TIO
+import Text.Read (readMaybe)
 import GHC.IO.StdHandles (stderr)
 import GHC.IO.Handle (hPutStr)
 import Control.Exception (try, SomeException, evaluate)
@@ -20,7 +23,28 @@ import Control.Exception (try, SomeException, evaluate)
 
 main :: IO ()
 main = do
-  args <- getArgs >>= (return . (map T.pack)) -- get args passed in
+  args <- getArgs -- nvm need them as strings for getOpt
+  if unwords args == "penguin of doom" then   -- hehe we have fun here :)
+    TIO.putStrLn pod
+  else do
+    let (flags, edits', errs') = getOpt Permute options args
+    if (Help `elem` flags) || null args then -- if there is nothing passed then just display help
+      TIO.putStrLn help
+    else do -- generate list of macros
+      confDir <- getXdgDirectory XdgConfig ".teh" -- get path for where the user .teh file should be
+      let (newFlags, preMacList) = makeMacFileList ([], [confDir, "./.teh"]) flags
+      wereMacsFound <- mapM doesFileExist preMacList -- make list of bools corresponding with whether each in preMacList exists
+      let (found', notFound') = partition fst $ zip wereMacsFound preMacList -- sort found and not found mac files
+      let notFound = filter (\x -> not $ x `elem` [confDir, ".teh"]) $ map snd notFound' -- strip bool and defaults for ease
+      if not $ null notFound then -- if there were still config files not found
+        die $ "Couldn't find the following macros files " ++ (unwords notFound) -- literally just complain and die
+      else do
+        let foundMacsFiles = map snd found' -- we got our list of macro files lfgggggggg
+        -- parse out macros files
+        -- if ShowMacros `elem` flags then show macros
+        return ()
+
+{--
   if (any (`elem`args) ["-h", "--help"]) || null args then -- checking for an early exit condition
     putTxt help
   else if args == ["--penguin"] then do  -- hehe we have fun here :)
@@ -62,7 +86,7 @@ main = do
           putStdErr $ "errors on parsing edits\n" <>  (T.unlines edErrs)
         else
           getContents >>= (return . T.pack) >>= (\x -> putTxt $ teh nflag pEdits x)
-
+--}
 
           -- forever $ getLine >>= (return . T.pack) >>= (\x -> putTxt $ teh nflag pEdits x)
           -- this /kinda/ works for editing stream from std in if you only want to work with each line, and ony insert
@@ -73,6 +97,31 @@ main = do
 -- -----------*
 --  datatypes
 -- -----------*
+
+data Flag  = Help
+           | AddMacros FilePath
+           | RemoveMacros FilePath
+           | ShowMacros
+           | FileToEdit FilePath
+           | TextToEdit T.Text
+           | IncludeNewline
+           | StdIn
+  deriving (Show, Eq)
+
+options :: [OptDescr Flag] -- okay not really a datatype but it makes sense to have it next to where Flag is defined
+options =
+  [ Option "h" ["help"]            (NoArg  Help)                        "show Help message"
+  , Option "m" ["macros"]          (ReqArg AddMacros            "FILE") "add a file to read Macros from"
+  , Option "r" ["remove-macros"]   (ReqArg RemoveMacros         "FILE") "Remove a file to read macros from"
+  , Option "s" ["show-macros"]     (NoArg  ShowMacros)                  "Show all macros that will be active"
+  , Option "f" ["file-to-edit"]    (ReqArg FileToEdit           "FILE") "Tile of text to apply edits to"
+  , Option "t" ["text-to-edit"]    (ReqArg (TextToEdit . T.pack)"TEXT") "Text to apply edits to"
+  , Option "n" ["include-newline"] (NoArg  IncludeNewline)              "include Newline in changes done"
+  , Option "s" ["stdin"]           (NoArg  StdIn)                       "edit text from Stdin even with -t or -t flag"
+  ]
+
+strFn :: (T.Text -> a) -> String -> a
+strFn f s = f $ T.pack s
 
 type Edit  = (Target, [Change])
 
@@ -91,6 +140,20 @@ type Macros = M.Map T.Text Edit
 -- -------------------------------*
 --  functions to work with Macros
 -- -------------------------------*
+
+-- take a list of flags and return a tuple of the list of the rest of the flags, and a list of files to read macros from
+makeMacFileList :: ([Flag], [FilePath]) -> [Flag] -> ([Flag], [FilePath])
+makeMacFileList acc [] = acc -- base(d)case
+makeMacFileList (flagAcc, fileAcc) (flag:xs) =
+  case flag of
+    AddMacros file ->
+      if file `elem` fileAcc then -- if that file is already in the file list
+        makeMacFileList (flagAcc, (filter (/=file) fileAcc)<+>file) xs -- remove it before tacking it on the end
+      else
+        makeMacFileList (flagAcc, fileAcc <+> file) xs -- otherwise just tack it on the end
+    RemoveMacros file ->
+      makeMacFileList (flagAcc, (filter (/=file) fileAcc)) xs
+    _ -> makeMacFileList (flagAcc <+> flag, fileAcc) xs
 
 -- takes a filepath to look for macros, tries to read them, and tries to have them parsed
 -- returns a Text value stating any errors that occured in parsing, and a Macros value
@@ -568,11 +631,11 @@ pod =
 \t3h PeNgU1N oF d00m"
 
 help :: T.Text
-help =
-  "Usage: teh [options]\n\
-  \   by default teh reads from StdIn for text to apply changes to.  To disable this either pass the --nostdin flag or\n\
-  \   pass a filename as the final argument \
-  \   -h will bring you this menu and --listmacros will list all macros found in the config folder and in the local directory\
-  \   macros can be written in the .teh file in a directory or in your xdgconfig directory\
-  \   commands are written in the form of 'Ch <Whole, Each, Only [1, 2, 3]> (<Fr \"find\" \"replce\", Rem 0 1, Ins 0 \"insert\">)'\
-  \   See README for more details "
+help = "if you're seeing this that means I forgot to update the help text oops go bug me on github about it"
+--   "Usage: teh [options]\n\
+--   \   by default teh reads from StdIn for text to apply changes to.  To disable this either pass the --nostdin flag or\n\
+--   \   pass a filename as the final argument \
+--   \   -h will bring you this menu and --listmacros will list all macros found in the config folder and in the local directory\
+--   \   macros can be written in the .teh file in a directory or in your xdgconfig directory\
+--   \   commands are written in the form of 'Ch <Whole, Each, Only [1, 2, 3]> (<Fr \"find\" \"replce\", Rem 0 1, Ins 0 \"insert\">)'\
+--   \   See README for more details "

@@ -1,22 +1,25 @@
 # this is an example Macros file for teh
 
-technically any line that doesn't start with a " get's ignored by the parser so you
+any line that doesn't start with a " get's ignored by the parser so you
 don't have to preface comments with a #, you can just type them our plainly like this
 but I still like prefacing some comments with a # to indicate a section header because
-markdown has permanently altered how I look at plain text documents.
+markdown has permanently altered how I look at plain text documents.  if for whatever reason
+you do want to leave a comment that starts with a quote, preface it with a blank space, ex:
+ "this line will be parsed as a comment"
 
-this file is just an example .teh file that I keep in my ~/.config/ (with less comment)
-it is easy to modify to your own. If any of your changes don't work, then run
+this file is just an example .teh file that I keep in my ~/.config/ (with less comments)
+it is easy to modify to your own needs. If any of your changes don't work, then run
 teh --show-macros to see all the macros that are in scope and see any errors when
 parsing them
 
-each non-comment line should start with a quoted label, followed by as much whitespce
-makes things look clear, then an edit that could also be passed in to teh as an argument.
-Remember you can also override the Target anytime you call the macro. for ex. if I
-pipe a paragraph of text into `teh par` teh will add a '(' before the first character
-of the paragraph, and ')' after the last character. I could still pipe that same
-paragraph in to `teh 'each par'` to wrap each line in a '(' and ')', or
-`teh 'only 1 3 5 6 par'` to only parenthesize lines 1,3,5,and 6 of the paragraph
+each macro should take one line to it's self, and should start with a single quoted word with
+with no whitespace, followed by as much whitespce as you want, then an edit that could also
+be passed in to teh as an argument, note you cannot reference another macro in your edits here
+because they haven't been parsed yet. Remember you can also override the Target anytime you use
+the macro. for ex. if I pipe a paragraph of text into `teh par` teh will add a '(' before the
+first character of the paragraph, and ')' after the last character. I could still pipe that same
+paragraph in to `teh each par` to wrap each line in a '(' and ')', or `teh only [1,3,5,6] par`
+to only parenthesize lines 1,3,5,and 6 of the paragraph
 
 # general text editing macros
 ## little macros that I find useful mostly anywhere
